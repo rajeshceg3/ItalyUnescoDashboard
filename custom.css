@@ -1,0 +1,250 @@
+/* Global Styling & Root Variables (Optional, but good for consistency) */
+:root {
+    --primary-theme-color: #00796B; /* Deep Teal */
+    --accent-color: #B08D57; /* Muted Gold/Bronze */
+    --page-background-color: #F8F8F8;
+    --card-background-color: #FFFFFF;
+    --primary-text-color: #333333;
+    --text-on-primary-bg: #FFFFFF;
+    --text-on-primary-bg-cream: #FFFDD0;
+    --border-color: #DDDDDD;
+    --heading-font: Georgia, 'Times New Roman', Times, serif;
+    --body-font: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+/* Main page styling */
+body, .gradio-container { /* Apply to body and top-level Gradio container */
+    font-family: var(--body-font);
+    background-color: var(--page-background-color);
+    color: var(--primary-text-color);
+    margin: 0;
+    padding: 0;
+}
+
+/* Attempt to constrain width for very wide screens - Gradio structure specific */
+/* This might need to target a specific inner block if .gradio-container is too broad */
+.gradio-container > .flex.w-full { /* Common Gradio structure */
+    max-width: 1600px; /* Max width for the main content area */
+    margin: 0 auto; /* Center it */
+}
+
+
+/* --- Typography & Headings --- */
+#main_title_md_dynamic .gr-markdown h1, /* For # Main Title */
+#map_title_md_dynamic .gr-markdown h2,   /* For ## Map Title */
+#detail_site_name_md_dynamic .gr-markdown h2 /* For ## Detail Site Name */ {
+    font-family: var(--heading-font);
+    color: var(--primary-theme-color);
+    text-align: center;
+    margin-bottom: 20px;
+}
+#main_title_md_dynamic .gr-markdown h1 { font-size: 2.8em; margin-top: 20px; }
+#map_title_md_dynamic .gr-markdown h2 { font-size: 2em; margin-top: 30px; }
+#detail_site_name_md_dynamic .gr-markdown h2 { font-size: 2.2em; }
+
+
+/* --- General Layout & Sections --- */
+#main_content_area_dynamic, #detailed_view_area_dynamic {
+    padding: 20px;
+    max-width: 1200px; /* Max width for these content blocks */
+    margin: 20px auto; /* Centering the content blocks */
+    background-color: var(--card-background-color); /* Give them a distinct background from page bg */
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+
+/* --- Search Box Styling --- */
+#search_box_dynamic .gr-input-container, /* Target Gradio's input container */
+#search_box_dynamic input[type="text"] {
+    border-radius: 20px !important; /* More rounded corners */
+    border: 1px solid var(--border-color) !important;
+    padding: 10px 15px !important;
+    font-size: 1em !important;
+}
+#search_box_dynamic input[type="text"]:focus {
+    border-color: var(--primary-theme-color) !important;
+    box-shadow: 0 0 0 2px rgba(0, 121, 107, 0.2) !important; /* Focus ring */
+}
+
+/* --- Site Cards Area --- */
+#sites_cards_area_dynamic {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 25px; /* Increased gap */
+    justify-content: center;
+    padding: 20px 0; /* Padding top/bottom */
+}
+
+/* --- Individual Site Card Styling --- */
+.site-card {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0; /* Padding handled by inner elements or remove if image is flush */
+    background-color: var(--card-background-color);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    flex: 1 1 320px; /* Slightly larger base size */
+    max-width: 380px;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    overflow: hidden; /* To make sure image border radius is applied */
+}
+.site-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.site-card .gr-image img { /* Target Gradio image component's img tag */
+    width: 100%;
+    height: 220px; /* Slightly taller images */
+    object-fit: cover;
+    /* border-radius: 0; Removed to be flush if card has padding 0 */
+    /* border-top-left-radius: 10px; /* Applied if padding 0 on card */
+    /* border-top-right-radius: 10px; /* Applied if padding 0 on card */
+    margin-bottom: 0; /* Remove default margin if any */
+}
+
+.site-card > div:not(.gr-image) { /* Container for text content below image */
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1; /* Allows this part to grow, pushing button to bottom */
+}
+
+
+.site-card .card-title .gr-markdown h3 { /* If using ### {site_name} */
+    font-family: var(--heading-font);
+    color: var(--primary-theme-color);
+    font-size: 1.4em;
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.site-card .gr-textbox textarea {
+    font-size: 0.95em;
+    color: #555;
+    border: none;
+    padding: 0;
+    background-color: transparent;
+    resize: none; /* Prevent resize */
+}
+.site-card .gr-button-container { /* Ensure button is at the bottom */
+    margin-top: auto; /* Pushes button to the bottom of the flex container */
+    padding-top: 10px; /* Space above button */
+}
+
+
+/* --- General Button Styling --- */
+.gr-button button, button.gr-button { /* Target Gradio buttons */
+    background-color: var(--primary-theme-color) !important;
+    color: var(--text-on-primary-bg) !important;
+    border: none !important;
+    border-radius: 5px !important;
+    padding: 10px 15px !important;
+    cursor: pointer !important;
+    transition: background-color 0.2s ease !important;
+    font-size: 0.95em !important;
+    text-align: center !important;
+}
+.gr-button button:hover, button.gr-button:hover {
+    background-color: #005a4f !important; /* Darker shade of primary */
+}
+
+/* Specific button cases if needed */
+#back_to_list_btn_dynamic button {
+    background-color: var(--accent-color) !important; /* Use accent for back button */
+}
+#back_to_list_btn_dynamic button:hover {
+    background-color: #8c6d46 !important; /* Darker accent */
+}
+
+/* --- Map Styling --- */
+#map_output_html_dynamic iframe {
+    width: 100%;
+    min-height: 450px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* --- Detailed View Styling --- */
+#detailed_view_area_dynamic {
+    padding: 25px;
+    background-color: #fff; /* White background for detail section */
+    border-radius: 10px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08);
+}
+#detail_image_display_dynamic .gr-image img {
+    border-radius: 8px;
+    max-height: 400px; /* Limit image height in detail view */
+    object-fit: contain; /* Show full image */
+    margin: 0 auto 20px auto; /* Center image */
+    display: block;
+    border: 1px solid var(--border-color);
+}
+#detail_desc_text_dynamic textarea,
+#detail_location_text_dynamic textarea,
+#detail_year_text_dynamic textarea,
+#detail_unesco_text_dynamic textarea {
+    font-family: var(--body-font);
+    font-size: 1.05em !important;
+    color: var(--primary-text-color) !important;
+    background-color: #fdfdfd !important; /* Very light bg for readonly text */
+    border-radius: 5px !important;
+    border: 1px solid #e5e5e5 !important;
+    padding: 10px !important;
+}
+
+/* --- Input Fields & Textboxes (General, if not covered by specific selectors) --- */
+.gr-input-container input[type="text"],
+.gr-input-container input[type="number"],
+.gr-input-container textarea,
+.gradio-textbox textarea { /* General Gradio textbox */
+    border-radius: 5px !important;
+    border: 1px solid #ccc !important;
+    padding: 8px 10px !important;
+    font-size: 1em !important;
+    font-family: var(--body-font) !important;
+}
+.gradio-textbox textarea:focus,
+.gr-input-container input[type="text"]:focus {
+    border-color: var(--primary-theme-color) !important;
+    box-shadow: 0 0 0 1px var(--primary-theme-color) !important;
+}
+
+
+/* --- Scrollbar Styling (Webkit browsers) --- */
+::-webkit-scrollbar {
+    width: 10px; /* Slightly wider */
+    height: 10px;
+}
+::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--primary-theme-color);
+    border-radius: 10px;
+    border: 2px solid #f1f1f1; /* Creates a nice padding effect */
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #005a4f;
+}
+
+/* Ensure labels are styled consistently */
+.gr-form > .block > .label > .label-text, /* Common Gradio label structure */
+.gr-form > .block > .label span /* Sometimes it's a span */ {
+    font-family: var(--body-font) !important;
+    font-size: 1em !important;
+    color: var(--primary-text-color) !important;
+    font-weight: bold !important;
+    margin-bottom: 5px !important; /* Space between label and input */
+}
+
+/* Markdown specific styling if needed beyond titles */
+.gr-markdown p, .gr-markdown li {
+    font-family: var(--body-font);
+    line-height: 1.6;
+    color: var(--primary-text-color);
+}
+```
