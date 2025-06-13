@@ -16,16 +16,48 @@ def install_dependencies():
             importlib.import_module(lib_name)
             print(f"{lib_name} is already installed.")
         except ImportError:
-            print(f"Installing {lib_name}...")
+            print(f"Installing {lib_name} using pip install --user...")
             try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", lib_name])
+                user_site_packages = subprocess.check_output(
+                    [sys.executable, "-m", "site", "--user-site"],
+                    text=True,
+                    stderr=subprocess.STDOUT
+                ).strip()
+
+                user_bin_path = os.path.expanduser("~/.local/bin")
+
+                if user_bin_path not in os.environ["PATH"]:
+                    print(f"Adding {user_bin_path} to PATH")
+                    os.environ["PATH"] = f"{user_bin_path}:{os.environ['PATH']}"
+
+                if "PYTHONPATH" not in os.environ:
+                    os.environ["PYTHONPATH"] = user_site_packages
+                elif user_site_packages not in os.environ["PYTHONPATH"]:
+                    os.environ["PYTHONPATH"] = f"{user_site_packages}:{os.environ['PYTHONPATH']}"
+
+                # print(f"DEBUG: Current PATH for app.py: {os.environ.get('PATH', 'Not set')}")
+                # print(f"DEBUG: Current PYTHONPATH for app.py: {os.environ.get('PYTHONPATH', 'Not set')}")
+
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", lib_name])
+
+                if user_site_packages not in sys.path:
+                    print(f"Adding {user_site_packages} to sys.path for app.py")
+                    sys.path.append(user_site_packages)
+
                 importlib.import_module(lib_name) # Verify installation
-                print(f"Successfully installed {lib_name}.")
+                print(f"Successfully installed and imported {lib_name}.")
             except subprocess.CalledProcessError as e:
                 print(f"Error installing {lib_name}: {e}")
+                output = e.output.decode('utf-8') if e.output else "No output"
+                print(f"Pip install output for {lib_name}:\n{output}")
                 all_installed = False
-            except ImportError:
-                print(f"Failed to import {lib_name} even after attempting installation.")
+            except ImportError as ie:
+                print(f"Failed to import {lib_name} even after attempting installation and PATH/PYTHONPATH updates.")
+                print(f"Current sys.path for {lib_name}: {sys.path}")
+                print(f"ImportError for {lib_name}: {ie}")
+                all_installed = False
+            except Exception as ex:
+                print(f"An unexpected error occurred during installation of {lib_name}: {ex}")
                 all_installed = False
 
     if not all_installed:
@@ -33,7 +65,8 @@ def install_dependencies():
         sys.exit(1)
 
 install_dependencies()
-import folium # Import after installation check
+# Re-import folium here to ensure it's found after potential installation path fixes
+import folium
 
 # --- Constants and Data Loading ---
 DATA_FILE = "data/unesco_sites_italy.csv"
@@ -92,10 +125,33 @@ def generate_map_html(df_map_data):
             if pd.isna(lat) or pd.isna(lon):
                 print(f"Skipping site {row['Site Name']} due to invalid coordinates.")
                 continue
+
+            # Prepare popup content
+            site_name = row.get('Site Name', 'N/A')
+            image_url = row.get('Image URL', '#')
+            location_text = row.get('Location', 'N/A') # Renamed to avoid conflict with folium.Marker's location
+            year_listed = row.get('Year Listed', 'N/A')
+
+            popup_html = f"<b>{site_name}</b><br>"
+            if image_url != '#' and image_url != 'N/A' and pd.notna(image_url):
+                popup_html += f"<a href='{image_url}' target='_blank'>View Image</a><br>"
+            else:
+                popup_html += "No image available<br>"
+
+            # Add Location and Year Listed, handling N/A values
+            if location_text != 'N/A' and pd.notna(location_text):
+                popup_html += f"<b>Location:</b> {location_text}<br>"
+            if year_listed != 'N/A' and pd.notna(year_listed):
+                popup_html += f"<b>Year Listed:</b> {year_listed}"
+
+            # Clean up trailing <br> if year_listed was the last item and was N/A
+            if popup_html.endswith("<br>"):
+                 popup_html = popup_html[:-4]
+
             folium.Marker(
                 location=[lat, lon],
-                popup=f"{row['Site Name']}<br><a href='{row.get('Image URL', '#')}' target='_blank'>View Image</a>", # Basic popup
-                tooltip=row['Site Name']
+                popup=folium.Popup(popup_html, max_width=300),
+                tooltip=site_name # Keep tooltip simple with just the site name
             ).add_to(site_map)
         except ValueError as ve:
             print(f"Coordinate conversion error for site {row['Site Name']}: {ve}. Using default for map display if possible.")
@@ -182,11 +238,17 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         """Handles click on 'View Details' button."""
         site_info_series = all_sites_data_val[all_sites_data_val['Site Name'] == site_name_to_display].iloc[0]
 
+        image_url_val = site_info_series['Image URL']
+        if pd.isna(image_url_val) or image_url_val == "N/A":
+            image_to_display = None
+        else:
+            image_to_display = image_url_val
+
         return {
             main_content_area: gr.update(visible=False),
             detailed_view_area: gr.update(visible=True),
             detail_site_name_md: gr.update(value=f"## {site_info_series['Site Name']}"),
-            detail_image_display: gr.update(value=site_info_series['Image URL'] if pd.notna(site_info_series['Image URL']) and site_info_series['Image URL'] != "N/A" else None),
+            detail_image_display: gr.update(value=image_to_display),
             detail_desc_text: gr.update(value=site_info_series['Description']),
             detail_location_text: gr.update(value=site_info_series['Location']),
             detail_year_text: gr.update(value=site_info_series['Year Listed']),
