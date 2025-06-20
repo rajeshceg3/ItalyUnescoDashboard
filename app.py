@@ -205,15 +205,6 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                 # The handler 'show_site_details' will need to know which components to update.
                 # It will return a dictionary of component: gr.update(...)
                 view_details_btn = gr.Button("View Details")
-                view_details_btn.click(
-                    fn=partial(show_site_details, site_name), # Pass site_name directly
-                    inputs=[all_sites_for_button_action],      # Pass the full dataset to find the site
-                    outputs=[
-                        main_content_area, detailed_view_area,
-                        detail_site_name_md, detail_image_display, detail_desc_text,
-                        detail_location_text, detail_year_text, detail_unesco_text
-                    ]
-                )
             card_list.append(card)
         return card_list
 
@@ -294,6 +285,25 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         inputs=[all_sites_df_state],
         outputs=[sites_cards_area, map_output, filtered_sites_df_state]
     )
+
+    # --- Render Site Cards and Bind Click Events ---
+    with gr.Row():
+        # Initially render all site cards (or a subset) here
+        initial_cards = render_site_cards(initial_df, all_sites_df_state)
+        for card in initial_cards:
+            with card:
+                # Bind the click event for the view details button here
+                view_details_btn = card[-1]  # Assuming the button is the last element in the card
+                site_name = card[1].value  # Assuming the site name is in the second position
+                view_details_btn.click(
+                    fn=partial(show_site_details, site_name),
+                    inputs=[all_sites_df_state],
+                    outputs=[
+                        main_content_area, detailed_view_area,
+                        detail_site_name_md, detail_image_display, detail_desc_text,
+                        detail_location_text, detail_year_text, detail_unesco_text
+                    ]
+                )
 
 if __name__ == "__main__":
     if initial_df.empty and not os.path.exists(DATA_FILE):
