@@ -1,0 +1,91 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.venv/
+.env/
+.env.*
+pip-selfcheck.json
+
+# Environment files
+environment.yml
+environment.yaml
+Pipfile
+Pipfile.lock
+requirements.txt
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Data files
+data/
+*.csv
+*.tsv
+*.parquet
+*.xlsx
+*.xls
+*.json
+*.db
+*.sqlite
+*.h5
+*.hdf5
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Gradio cache and artifacts
+gradio_cached_examples/
+gradio_cache/
+gradio_tmp/
+*.gradio
+
+# Logs
+*.log
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Test output
+test-results/
+*.pytest_cache/
+.pytest_cache/
+
+# VSCode and other editor settings
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Mac system files
+Icon?
+._*
+
+# Python-metadata
+*.pyo
+*.pyd
+
+# Misc
+*.bak
+*.swp
+*.tmp
+*.orig
