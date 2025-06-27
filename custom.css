@@ -1,4 +1,16 @@
 /* Global Styling & Root Variables (Optional, but good for consistency) */
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 :root {
     --primary-theme-color: #00796B; /* Deep Teal */
     --accent-color: #B08D57; /* Muted Gold/Bronze */
@@ -51,6 +63,7 @@ body, .gradio-container { /* Apply to body and top-level Gradio container */
     background-color: var(--card-background-color); /* Give them a distinct background from page bg */
     border-radius: 10px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    transition: opacity 0.5s ease-in-out, visibility 0.5s ease-in-out; /* Added transition */
 }
 
 /* --- Search Box Styling --- */
@@ -86,11 +99,12 @@ body, .gradio-container { /* Apply to body and top-level Gradio container */
     max-width: 380px;
     display: flex;
     flex-direction: column;
-    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    transition: transform 0.3s ease-in-out, box-shadow 0.2s ease-in-out; /* Updated transition */
     overflow: hidden; /* To make sure image border radius is applied */
+    animation: fadeInUp 0.5s ease-out forwards; /* Added animation */
 }
 .site-card:hover {
-    transform: translateY(-5px);
+    transform: translateY(-5px) rotateX(5deg) rotateY(3deg); /* Enhanced hover effect */
     box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
@@ -142,12 +156,15 @@ body, .gradio-container { /* Apply to body and top-level Gradio container */
     border-radius: 5px !important;
     padding: 10px 15px !important;
     cursor: pointer !important;
-    transition: background-color 0.2s ease !important;
+    transition: background-color 0.2s ease, transform 0.1s ease !important; /* Updated transition */
     font-size: 0.95em !important;
     text-align: center !important;
 }
 .gr-button button:hover, button.gr-button:hover {
     background-color: #005a4f !important; /* Darker shade of primary */
+}
+.gr-button button:active, button.gr-button:active {
+    transform: scale(0.97); /* Pressed effect */
 }
 
 /* Specific button cases if needed */
