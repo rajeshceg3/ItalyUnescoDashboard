@@ -9,6 +9,7 @@ import gradio as gr
 # --- Dependency Installation ---
 def install_dependencies():
     """Installs necessary libraries if not already present."""
+    print("Consider using a Python virtual environment for managing dependencies for this application.")
     libraries = ["gradio", "pandas", "folium"]
     all_installed = True
     for lib_name in libraries:
@@ -186,30 +187,46 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         detail_unesco_text = gr.Textbox(label="UNESCO Data", interactive=False, elem_id="detail_unesco_text_dynamic") # Changed elem_id
 
     # --- Card Rendering Function ---
-    def render_site_cards(df_render_data, all_sites_for_button_action):
-        card_list = []
+    def render_site_cards(df_render_data, all_sites_df_state_for_click_handler,
+                          main_content_area_ref, detailed_view_area_ref,
+                          detail_site_name_md_ref, detail_image_display_ref,
+                          detail_desc_text_ref, detail_location_text_ref,
+                          detail_year_text_ref, detail_unesco_text_ref):
+        card_list_components = []
         if df_render_data.empty:
             return [gr.Markdown("No sites found matching your criteria.", elem_id="no_sites_found_md")]
 
         for index, row_data in df_render_data.iterrows():
             site_name = row_data['Site Name']
-            with gr.Column(elem_classes=['site-card']) as card:
+            with gr.Column(elem_classes=['site-card']) as card_column: # card_column is a gr.Blocks context
                 if pd.notna(row_data['Image URL']) and row_data['Image URL'] != "N/A":
                     gr.Image(value=row_data['Image URL'], show_label=False, interactive=False, height=200)
                 else:
-                    gr.Image(value=None, show_label=False, interactive=False, height=200) # Placeholder or hide
+                    gr.Image(value=None, label="No Image", show_label=False, interactive=False, height=200)
                 gr.Markdown(f"### {site_name}", elem_classes=['card-title'])
-                gr.Textbox(value=row_data['Location'], label="Location", interactive=False, lines=1)
+                gr.Textbox(value=row_data.get('Location', 'N/A'), label="Location", interactive=False, lines=1)
 
-                # Use functools.partial to pass site_name to the click handler
-                # The handler 'show_site_details' will need to know which components to update.
-                # It will return a dictionary of component: gr.update(...)
                 view_details_btn = gr.Button("View Details")
-            card_list.append(card)
-        return card_list
+
+                # Wire the button's click event HERE
+                view_details_btn.click(
+                    fn=show_site_details,
+                    inputs=[gr.State(value=site_name), all_sites_df_state_for_click_handler],
+                    outputs=[
+                        main_content_area_ref, detailed_view_area_ref,
+                        detail_site_name_md_ref, detail_image_display_ref, detail_desc_text_ref,
+                        detail_location_text_ref, detail_year_text_ref, detail_unesco_text_ref
+                    ]
+                )
+            card_list_components.append(card_column)
+        return card_list_components
 
     # --- Event Handlers ---
-    def update_search_results(query, all_sites_data_val):
+    def update_search_results(query, all_sites_data_val,
+                              main_content_area_ref, detailed_view_area_ref,
+                              detail_site_name_md_ref, detail_image_display_ref,
+                              detail_desc_text_ref, detail_location_text_ref,
+                              detail_year_text_ref, detail_unesco_text_ref):
         if not query:
             filtered_df = all_sites_data_val
         else:
@@ -219,14 +236,20 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                 all_sites_data_val['Description'].str.lower().str.contains(q_lower)
             ]
 
-        new_cards = render_site_cards(filtered_df, all_sites_df_state) # Pass state for button actions
+        new_cards_layout = render_site_cards(
+            filtered_df, all_sites_data_val, # Note: all_sites_data_val is used for click handler, not all_sites_df_state
+            main_content_area_ref, detailed_view_area_ref,
+            detail_site_name_md_ref, detail_image_display_ref, detail_desc_text_ref,
+            detail_location_text_ref, detail_year_text_ref, detail_unesco_text_ref
+        )
         new_map_html = generate_map_html(filtered_df)
 
-        # The output for sites_cards_area should be the list of components directly
-        return new_cards, new_map_html, filtered_df # Update cards, map, and filtered_df_state
+        return new_cards_layout, new_map_html, filtered_df
 
-    def show_site_details(site_name_to_display, all_sites_data_val):
+    def show_site_details(site_name_to_display, all_sites_data_val): # Signature is correct
         """Handles click on 'View Details' button."""
+        # Ensure all_sites_data_val is a DataFrame. If it's a gr.State, access its value.
+        # However, Gradio usually passes the actual value to the function.
         site_info_series = all_sites_data_val[all_sites_data_val['Site Name'] == site_name_to_display].iloc[0]
 
         image_url_val = site_info_series['Image URL']
@@ -256,54 +279,48 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
     # --- Connect Event Handlers ---
     search_box.submit(
         fn=update_search_results,
-        inputs=[search_box, all_sites_df_state],
+        inputs=[
+            search_box, all_sites_df_state,
+            main_content_area, detailed_view_area, detail_site_name_md,
+            detail_image_display, detail_desc_text, detail_location_text,
+            detail_year_text, detail_unesco_text
+        ],
         outputs=[sites_cards_area, map_output, filtered_sites_df_state]
     )
-    # Optional: Trigger search on text change (can be resource-intensive)
-    # search_box.change(
-    #     fn=update_search_results,
-    #     inputs=[search_box, all_sites_df_state],
-    #     outputs=[sites_cards_area, map_output, filtered_sites_df_state]
-    # )
 
     back_to_list_btn.click(
         fn=back_to_list_view_fn,
-        inputs=[],
-        outputs=[main_content_area, detailed_view_area]
+        inputs=[], # No inputs needed
+        outputs=[main_content_area, detailed_view_area] # Correctly defined
     )
 
     # --- App Load Action ---
-    def initial_load(all_sites_data_val):
-        # Same as update_search_results but with empty query
-        filtered_df = all_sites_data_val
-        initial_cards = render_site_cards(filtered_df, all_sites_df_state)
+    def initial_load(all_sites_data_val,
+                     main_content_area_ref, detailed_view_area_ref,
+                     detail_site_name_md_ref, detail_image_display_ref,
+                     detail_desc_text_ref, detail_location_text_ref,
+                     detail_year_text_ref, detail_unesco_text_ref):
+        filtered_df = all_sites_data_val # Initially, all sites are "filtered"
+        initial_cards_layout = render_site_cards(
+            filtered_df, all_sites_data_val, # Pass all_sites_data_val for click handlers
+            main_content_area_ref, detailed_view_area_ref,
+            detail_site_name_md_ref, detail_image_display_ref, detail_desc_text_ref,
+            detail_location_text_ref, detail_year_text_ref, detail_unesco_text_ref
+        )
         initial_map_html = generate_map_html(filtered_df)
-        return initial_cards, initial_map_html, filtered_df
+        return initial_cards_layout, initial_map_html, filtered_df
 
     app.load(
         fn=initial_load,
-        inputs=[all_sites_df_state],
+        inputs=[
+            all_sites_df_state, main_content_area, detailed_view_area,
+            detail_site_name_md, detail_image_display, detail_desc_text,
+            detail_location_text, detail_year_text, detail_unesco_text
+        ],
         outputs=[sites_cards_area, map_output, filtered_sites_df_state]
     )
 
-    # --- Render Site Cards and Bind Click Events ---
-    with gr.Row():
-        # Initially render all site cards (or a subset) here
-        initial_cards = render_site_cards(initial_df, all_sites_df_state)
-        for card in initial_cards:
-            with card:
-                # Bind the click event for the view details button here
-                view_details_btn = card[-1]  # Assuming the button is the last element in the card
-                site_name = card[1].value  # Assuming the site name is in the second position
-                view_details_btn.click(
-                    fn=partial(show_site_details, site_name),
-                    inputs=[all_sites_df_state],
-                    outputs=[
-                        main_content_area, detailed_view_area,
-                        detail_site_name_md, detail_image_display, detail_desc_text,
-                        detail_location_text, detail_year_text, detail_unesco_text
-                    ]
-                )
+# Removed the old manual binding block, as app.load handles initial card rendering with correct bindings.
 
 if __name__ == "__main__":
     if initial_df.empty and not os.path.exists(DATA_FILE):

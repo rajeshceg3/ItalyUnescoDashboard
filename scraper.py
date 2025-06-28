@@ -5,6 +5,7 @@ import importlib
 
 def install_libraries():
     """Installs necessary Python libraries and verifies installation."""
+    print("Consider using a Python virtual environment for managing dependencies.")
     libraries = ["requests", "beautifulsoup4", "pandas", "lxml"]
     all_installed = True
     for lib_name in libraries:
@@ -43,6 +44,9 @@ def install_libraries():
                 print(f"Current PYTHONPATH: {os.environ.get('PYTHONPATH', 'Not set')}")
 
                 subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", lib_name])
+                # subprocess.check_call raises CalledProcessError on non-zero exit,
+                # which is caught by the general 'except subprocess.CalledProcessError as e:' block.
+                # So, explicit check of return code here is redundant.
 
                 # Re-check import after attempting to fix environment
                 # For subprocess calls, environment changes in os.environ might not propagate directly
@@ -135,33 +139,73 @@ def scrape_unesco_sites():
     sites_data = []
     # The first row after headers is usually index 1, but if the table structure is complex
     # (e.g. multiple header rows), we might need to adjust.
-    # Let's inspect the first few rows to be sure.
-    # For now, we assume the first row [0] is headers, data starts from [1].
     rows = table.find_all("tr")
-    if len(rows) < 2:
-        print("Error: Table has no data rows.")
+    if len(rows) < 2: # Need at least one header row and one data row
+        print("Error: Table has insufficient rows (must have at least a header and a data row).")
         return
 
-    for row_index, row in enumerate(rows[1:], start=1):  # Skip header row (usually rows[0])
+    # Dynamic Column Indexing
+    headers_row = rows[0].find_all('th')
+    header_texts = [h.get_text(strip=True).lower() for h in headers_row]
+
+    column_map = {}
+    # Define canonical names and possible header variations
+    # Image URL will be handled specially as it's often not a text header.
+    # For Wikipedia, image is consistently in the second column (index 1).
+    expected_cols = {
+        "site_name": ["site name", "name", "site", "official name"],
+        "location": ["location", "region", "province", "coordinates"], # Coordinates often in location
+        "year_listed": ["year", "listed", "inscription date", "date of inscription"],
+        "unesco_data": ["criteria", "unesco data", "id", "reference"], # UNESCO ID or criteria
+        "description": ["description", "summary", "notes", "brief description"]
+    }
+
+    for canonical_name, possible_headers in expected_cols.items():
+        found = False
+        for i, header_text in enumerate(header_texts):
+            for p_header in possible_headers:
+                if p_header in header_text:
+                    column_map[canonical_name] = i
+                    found = True
+                    break
+            if found:
+                break
+        if not found:
+            print(f"Warning: Could not find header for '{canonical_name}'. This column will be missing or defaulted to 'N/A'.")
+            column_map[canonical_name] = -1 # Indicate missing header with -1 or some other sentinel
+
+    # Check for crucial missing headers
+    crucial_headers = ["site_name", "location"] # Example: site name is essential
+    for ch in crucial_headers:
+        if column_map.get(ch, -1) == -1:
+            print(f"Error: Crucial header '{ch}' is missing from the table. Cannot reliably process data. Exiting.")
+            return
+
+    # Image URL is typically in the second column (index 1) and doesn't have a text header.
+    # We will keep its handling based on a fixed index, but add robustness.
+    IMAGE_URL_INDEX = 1
+
+
+    for row_index, row in enumerate(rows[1:], start=1):  # Skip header row
         # Initialize fields with default "N/A"
         site_name, image_url, location, year_listed, unesco_data, description = ["N/A"] * 6
 
+        cells = row.find_all(["td", "th"]) # Cells can be td or th in data rows sometimes
+
+        # Helper function to get cell data safely
+        def get_cell_data(column_name, cell_list):
+            idx = column_map.get(column_name, -1)
+            if idx != -1 and idx < len(cell_list):
+                return cell_list[idx].get_text(strip=True)
+            return "N/A"
+
         try:
-            cells = row.find_all(["th", "td"])
+            # Site Name
+            site_name = get_cell_data("site_name", cells)
 
-            # General check for cell count
-            if len(cells) < 1:
-                # print(f"Warning: Row {row_index} has no cells. Skipping.") # Warnings commented
-                continue # Skip this iteration if no cells
-
-            # Site Name (cells[0])
-            if len(cells) > 0:
-                site_name = cells[0].get_text(strip=True)
-            # else: site_name remains "N/A"
-
-            # Image URL (cells[1])
-            if len(cells) > 1:
-                img_tag = cells[1].find("img")
+            # Image URL (special handling - index based)
+            if IMAGE_URL_INDEX < len(cells):
+                img_tag = cells[IMAGE_URL_INDEX].find("img")
                 if img_tag and img_tag.has_attr("src"):
                     image_url_temp = img_tag["src"]
                     if image_url_temp.startswith("//"):
@@ -170,44 +214,47 @@ def scrape_unesco_sites():
                         image_url = "https://en.wikipedia.org" + image_url_temp
                     elif image_url_temp.startswith("http"):
                         image_url = image_url_temp
-            # else: image_url remains "N/A"
+                    else:
+                        image_url = "N/A" # Default if format is unexpected
+                else:
+                    image_url = "N/A" # Default if no img_tag or src
+            else:
+                image_url = "N/A" # Default if cell index is out of bounds
 
-            # Location (cells[2])
-            if len(cells) > 2:
-                location = cells[2].get_text(strip=True)
-            # else: location remains "N/A"
+            # Location
+            location = get_cell_data("location", cells)
 
-            # Year Listed (cells[3])
-            if len(cells) > 3:
-                year_listed = cells[3].get_text(strip=True)
-            # else: year_listed remains "N/A"
+            # Year Listed
+            year_listed = get_cell_data("year_listed", cells)
 
-            # UNESCO Data (cells[4])
-            if len(cells) > 4:
-                unesco_data = cells[4].get_text(strip=True)
-            # else: unesco_data remains "N/A"
+            # UNESCO Data
+            unesco_data = get_cell_data("unesco_data", cells)
 
-            # Description (cells[5])
-            if len(cells) > 5:
-                description = cells[5].get_text(strip=True)
-            # else: description remains "N/A"
+            # Description
+            description = get_cell_data("description", cells)
 
-            if len(cells) < 6 and len(cells) > 0 :
-                 # print(f"Note: Row {row_index} ('{site_name}') has {len(cells)} cells (expected 6). Some data fields were defaulted to 'N/A'.") # Warnings commented
-                 pass
+            # Logging for rows with potentially missing data based on expected columns
+            missing_data_details = []
+            if site_name == "N/A" and column_map.get("site_name", -1) != -1 : missing_data_details.append("Site Name")
+            if location == "N/A" and column_map.get("location", -1) != -1 : missing_data_details.append("Location")
+            # Add more checks if needed for other important fields
 
+            if missing_data_details:
+                print(f"Warning: Row {row_index} (Site: '{site_name if site_name != 'N/A' else 'Unknown'}') - Data for '{', '.join(missing_data_details)}' defaulted to 'N/A' due to missing cell or content.")
 
         except Exception as e:
-            # print(f"Error processing cells for row {row_index} ('{site_name}'): {e}. Data for this row might be incomplete or defaulted.") # Warnings commented
+            current_site_name_for_log = site_name if site_name != "N/A" else "Unknown"
+            print(f"Error processing cells for row {row_index} (Site: '{current_site_name_for_log}'): {e}. Data for this row set to 'N/A'.")
             # Fields already initialized to "N/A", so they will retain that if an error occurs.
-            pass
+            site_name, image_url, location, year_listed, unesco_data, description = ["N/A"] * 6
+
 
         sites_data.append([
             site_name, image_url, location, year_listed, unesco_data, description
         ])
 
     if not sites_data:
-        print("No data extracted. The table might be empty or the structure is not as expected.")
+        print("No data extracted. The table might be empty, or the structure after header processing is not as expected.")
         return
 
     # Store data in DataFrame
