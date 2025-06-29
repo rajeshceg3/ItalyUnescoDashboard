@@ -83,32 +83,36 @@ def install_libraries():
 install_libraries()
 
 # Import necessary libraries after installation check
+import argparse # Added for command-line arguments
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+# sys is already imported at the top
 
-def scrape_unesco_sites():
+def scrape_unesco_sites(country_name):
     """
-    Scrapes UNESCO World Heritage Sites in Italy from Wikipedia.
+    Scrapes UNESCO World Heritage Sites for a specific country from Wikipedia.
     """
     # Create data directory if it doesn't exist
-    if not os.path.exists("data"):
-        os.makedirs("data")
-        print("Created 'data' directory.")
+    # Using exist_ok=True is cleaner than checking os.path.exists
+    os.makedirs("data", exist_ok=True)
+    print("Ensured 'data' directory exists.")
 
-    # Fetch HTML content
-    url = "https://en.wikipedia.org/wiki/List_of_World_Heritage_Sites_in_Italy"
-    print(f"Fetching data from {url}...")
+    # Construct URL and filename dynamically
+    country_name_url_part = country_name.replace(' ', '_')
+    url = f"https://en.wikipedia.org/wiki/List_of_World_Heritage_Sites_in_{country_name_url_part}"
+
+    print(f"Fetching data for {country_name} from {url}...")
     try:
         response = requests.get(url)
         response.raise_for_status()  # Raise an exception for bad status codes
-        print("Successfully fetched HTML content.")
+        print(f"Successfully fetched HTML content for {country_name}.")
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching URL: {e}")
+        print(f"Error fetching URL for {country_name}: {e}")
         return
 
     # Parse HTML
-    print("Parsing HTML content...")
+    print(f"Parsing HTML content for {country_name}...")
     soup = BeautifulSoup(response.content, "lxml")
 
     # Find the main table
@@ -264,14 +268,30 @@ def scrape_unesco_sites():
     ])
 
     # Save DataFrame to CSV
-    csv_path = os.path.join("data", "unesco_sites_italy.csv")
+    country_name_file_part = country_name.lower().replace(' ', '_')
+    csv_path = os.path.join("data", f"unesco_sites_{country_name_file_part}.csv")
     try:
         df.to_csv(csv_path, index=False)
-        print(f"Successfully scraped {len(df)} sites.")
+        print(f"Successfully scraped {len(df)} sites for {country_name}.")
         print(f"Data saved to {csv_path}")
     except Exception as e:
-        print(f"Error saving DataFrame to CSV: {e}")
+        print(f"Error saving DataFrame to CSV for {country_name}: {e}")
 
 
 if __name__ == "__main__":
-    scrape_unesco_sites()
+    parser = argparse.ArgumentParser(description="Scrape UNESCO World Heritage Sites for a specific country.")
+    parser.add_argument(
+        "--country",
+        type=str,
+        default="Italy",
+        help="Name of the country to scrape (e.g., 'France', 'Germany'). Defaults to 'Italy'."
+    )
+    args = parser.parse_args()
+
+    country_input = args.country.strip()
+    if not country_input:
+        print("Error: Country name cannot be empty.")
+        sys.exit(1)
+
+    print(f"Starting scrape for country: {country_input}")
+    scrape_unesco_sites(country_input)
