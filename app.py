@@ -70,39 +70,50 @@ install_dependencies()
 import folium
 
 # --- Constants and Data Loading ---
-DATA_FILE = "data/unesco_sites_italy.csv"
-DEFAULT_LATITUDE = 41.8719  # Rome
+# DATA_FILE is now dynamically generated in load_data
+DEFAULT_LATITUDE = 41.8719  # Default fallback Rome
 DEFAULT_LONGITUDE = 12.5674
+EXPECTED_COLUMNS = ['Site Name', 'Image URL', 'Location', 'Year Listed', 'UNESCO Data', 'Description', 'Latitude', 'Longitude']
 
-def load_data():
-    """Loads data from CSV and adds dummy coordinates if needed."""
+def load_data(country_name="Italy"):
+    """Loads data from CSV for a given country and adds dummy coordinates if needed."""
+    data_file_path = os.path.join("data", f"unesco_sites_{country_name.lower().replace(' ', '_')}.csv")
+    print(f"Attempting to load data for {country_name} from: {data_file_path}")
     try:
-        if os.path.exists(DATA_FILE):
-            df = pd.read_csv(DATA_FILE)
-            if 'Latitude' not in df.columns:
-                df['Latitude'] = DEFAULT_LATITUDE
-            if 'Longitude' not in df.columns:
-                df['Longitude'] = DEFAULT_LONGITUDE
+        if os.path.exists(data_file_path):
+            df = pd.read_csv(data_file_path)
+
+            # Ensure all expected columns exist, fill with N/A or default if not
+            for col in EXPECTED_COLUMNS:
+                if col not in df.columns:
+                    if col == 'Latitude':
+                        df[col] = DEFAULT_LATITUDE
+                    elif col == 'Longitude':
+                        df[col] = DEFAULT_LONGITUDE
+                    else:
+                        df[col] = "N/A"
+
             # Ensure no NaN in coordinates for Folium
             df['Latitude'] = pd.to_numeric(df['Latitude'], errors='coerce').fillna(DEFAULT_LATITUDE)
             df['Longitude'] = pd.to_numeric(df['Longitude'], errors='coerce').fillna(DEFAULT_LONGITUDE)
 
-            # Fill NA for other potentially missing text fields to avoid errors in display
+            # Fill NA for other text fields
             for col in ['Site Name', 'Image URL', 'Location', 'Year Listed', 'UNESCO Data', 'Description']:
-                if col in df.columns:
+                if col in df.columns: # Should always be true now
                     df[col] = df[col].fillna("N/A")
-                else:
-                    df[col] = "N/A" # Add column if missing
+
+            # Reorder columns to EXPECTED_COLUMNS order just in case CSV has different order
+            df = df.reindex(columns=EXPECTED_COLUMNS)
+            print(f"Successfully loaded data for {country_name}.")
             return df
         else:
-            print(f"Error: Data file '{DATA_FILE}' not found. Please run scraper.py first.")
-            # Return an empty DataFrame with expected columns to prevent errors later
-            return pd.DataFrame(columns=['Site Name', 'Image URL', 'Location', 'Year Listed', 'UNESCO Data', 'Description', 'Latitude', 'Longitude'])
+            print(f"Error: Data file '{data_file_path}' not found for {country_name}. Scraper might need to be run for this country.")
+            return pd.DataFrame(columns=EXPECTED_COLUMNS)
     except Exception as e:
-        print(f"Error loading data: {e}")
-        return pd.DataFrame(columns=['Site Name', 'Image URL', 'Location', 'Year Listed', 'UNESCO Data', 'Description', 'Latitude', 'Longitude'])
+        print(f"Error loading data for {country_name} from {data_file_path}: {e}")
+        return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
-initial_df = load_data()
+initial_df = load_data() # Loads "Italy" by default
 
 # --- Map Generation ---
 def generate_map_html(df_map_data):
@@ -170,14 +181,26 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
     # --- Main Content Area (Visible by default) ---
     with gr.Column(elem_id="main_content_area_dynamic") as main_content_area:
-        gr.Markdown("# Italian UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic") # Changed elem_id
-        search_box = gr.Textbox(label="Search by Name or Description", elem_id="search_box_dynamic") # Changed elem_id
-        gr.Markdown("## Map of Sites", elem_id="map_title_md_dynamic") # Changed elem_id
-        map_output = gr.HTML(elem_id="map_output_html_dynamic") # Changed elem_id
+        main_title_md = gr.Markdown("# Italy UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic") # Italy default title
+
+        countries = ["Italy", "France"] # Add more countries as data becomes available
+        country_dropdown = gr.Dropdown(
+            label="Select Country",
+            choices=countries,
+            value="Italy",
+            elem_id="country_dropdown_dynamic"
+        )
+
+        search_box = gr.Textbox(label="Search by Name or Description", elem_id="search_box_dynamic")
+        gr.Markdown("## Map of Sites", elem_id="map_title_md_dynamic")
+        map_output = gr.HTML(elem_id="map_output_html_dynamic")
         sites_cards_area = gr.Column(elem_id="sites_cards_area_dynamic") # This will hold the dynamic cards
 
+        scrape_data_button = gr.Button("Generate/Refresh Data for Selected Country", visible=False, elem_id="scrape_data_button_dynamic")
+        scraper_instructions_md = gr.Markdown("", visible=False, elem_id="scraper_instructions_md_dynamic")
+
     # --- Detailed View Area (Hidden by default) ---
-    with gr.Column(visible=False, elem_id="detailed_view_area_dynamic") as detailed_view_area: # Changed elem_id
+    with gr.Column(visible=False, elem_id="detailed_view_area_dynamic") as detailed_view_area:
         back_to_list_btn = gr.Button("⬅️ Back to List", elem_id="back_to_list_btn_dynamic") # Changed elem_id
         detail_site_name_md = gr.Markdown(elem_id="detail_site_name_md_dynamic") # Changed elem_id
         detail_image_display = gr.Image(show_label=False, interactive=False, height=300, elem_id="detail_image_display_dynamic") # Changed elem_id
@@ -222,22 +245,25 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         return card_list_components
 
     # --- Event Handlers ---
-    def update_search_results(query, all_sites_data_val,
+    def update_search_results(query, current_all_sites_df, # Renamed all_sites_data_val for clarity
                               main_content_area_ref, detailed_view_area_ref,
                               detail_site_name_md_ref, detail_image_display_ref,
                               detail_desc_text_ref, detail_location_text_ref,
                               detail_year_text_ref, detail_unesco_text_ref):
         if not query:
-            filtered_df = all_sites_data_val
+            filtered_df = current_all_sites_df.copy() # Use copy to avoid modifying state directly
         else:
             q_lower = query.lower()
-            filtered_df = all_sites_data_val[
-                all_sites_data_val['Site Name'].str.lower().str.contains(q_lower) |
-                all_sites_data_val['Description'].str.lower().str.contains(q_lower)
+            # Ensure 'Site Name' and 'Description' are strings to prevent .str errors on non-string data
+            # This should be guaranteed by load_data, but defensive check is good.
+            df_searchable = current_all_sites_df[
+                current_all_sites_df['Site Name'].astype(str).str.lower().str.contains(q_lower) |
+                current_all_sites_df['Description'].astype(str).str.lower().str.contains(q_lower)
             ]
+            filtered_df = df_searchable
 
         new_cards_layout = render_site_cards(
-            filtered_df, all_sites_data_val, # Note: all_sites_data_val is used for click handler, not all_sites_df_state
+            filtered_df, current_all_sites_df, # Pass current_all_sites_df for click handlers
             main_content_area_ref, detailed_view_area_ref,
             detail_site_name_md_ref, detail_image_display_ref, detail_desc_text_ref,
             detail_location_text_ref, detail_year_text_ref, detail_unesco_text_ref
@@ -246,13 +272,18 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         return new_cards_layout, new_map_html, filtered_df
 
-    def show_site_details(site_name_to_display, all_sites_data_val): # Signature is correct
+    def show_site_details(site_name_to_display, current_all_sites_df): # Renamed all_sites_data_val
         """Handles click on 'View Details' button."""
-        # Ensure all_sites_data_val is a DataFrame. If it's a gr.State, access its value.
-        # However, Gradio usually passes the actual value to the function.
-        site_info_series = all_sites_data_val[all_sites_data_val['Site Name'] == site_name_to_display].iloc[0]
+        # current_all_sites_df is the DataFrame for the currently selected country
+        site_info_list = current_all_sites_df[current_all_sites_df['Site Name'] == site_name_to_display]
+        if site_info_list.empty:
+            # This case should ideally not happen if site_name_to_display comes from a valid card
+            print(f"Error: Site '{site_name_to_display}' not found in current dataset.")
+            # Potentially return updates to show an error message in detail view
+            return { main_content_area: gr.update(visible=True), detailed_view_area: gr.update(visible=False) }
 
-        image_url_val = site_info_series['Image URL']
+        site_info_series = site_info_list.iloc[0]
+        image_url_val = site_info_series.get('Image URL', "N/A") # Use .get for safety
         if pd.isna(image_url_val) or image_url_val == "N/A":
             image_to_display = None
         else:
@@ -261,26 +292,82 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         return {
             main_content_area: gr.update(visible=False),
             detailed_view_area: gr.update(visible=True),
-            detail_site_name_md: gr.update(value=f"## {site_info_series['Site Name']}"),
+            detail_site_name_md: gr.update(value=f"## {site_info_series.get('Site Name', 'N/A')}"),
             detail_image_display: gr.update(value=image_to_display),
-            detail_desc_text: gr.update(value=site_info_series['Description']),
-            detail_location_text: gr.update(value=site_info_series['Location']),
-            detail_year_text: gr.update(value=site_info_series['Year Listed']),
-            detail_unesco_text: gr.update(value=site_info_series['UNESCO Data'])
+            detail_desc_text: gr.update(value=site_info_series.get('Description', 'N/A')),
+            detail_location_text: gr.update(value=site_info_series.get('Location', 'N/A')),
+            detail_year_text: gr.update(value=site_info_series.get('Year Listed', 'N/A')),
+            detail_unesco_text: gr.update(value=site_info_series.get('UNESCO Data', 'N/A'))
         }
 
-    def back_to_list_view_fn():
+    def back_to_list_view_fn(): # No changes needed
         """Handles click on 'Back to List' button."""
         return {
             main_content_area: gr.update(visible=True),
             detailed_view_area: gr.update(visible=False)
         }
 
+    # --- Function to update data based on country selection ---
+    def update_country_data(selected_country,
+                            # UI component references needed for render_site_cards:
+                            main_content_area_ref, detailed_view_area_ref,
+                            detail_site_name_md_ref, detail_image_display_ref,
+                            detail_desc_text_ref, detail_location_text_ref,
+                            detail_year_text_ref, detail_unesco_text_ref):
+        print(f"Country selected: {selected_country}. Loading data...")
+        new_df = load_data(selected_country)
+
+        if new_df.empty:
+            updated_cards_content = [gr.Markdown(f"Data for **{selected_country}** not found. Click the button below for instructions on how to generate it.", elem_id="data_not_found_msg")]
+            updated_map_html = "<p style='text-align:center; color:grey;'>Map data not available: Data for selected country not found.</p>"
+            empty_df_for_state = pd.DataFrame(columns=EXPECTED_COLUMNS)
+            updated_title = f"# {selected_country} UNESCO World Heritage Sites Dashboard - Data not found"
+            return {
+                all_sites_df_state: empty_df_for_state,
+                filtered_sites_df_state: empty_df_for_state.copy(),
+                sites_cards_area: updated_cards_content,
+                map_output: updated_map_html,
+                search_box: gr.update(value=""),
+                main_title_md: gr.update(value=updated_title),
+                scrape_data_button: gr.update(visible=True),
+                scraper_instructions_md: gr.update(visible=False, value="")
+            }
+        else:
+            updated_cards_layout = render_site_cards(
+                new_df, new_df,
+                main_content_area_ref, detailed_view_area_ref,
+                detail_site_name_md_ref, detail_image_display_ref, detail_desc_text_ref,
+                detail_location_text_ref, detail_year_text_ref, detail_unesco_text_ref
+            )
+            updated_map_html = generate_map_html(new_df)
+            updated_title = f"# {selected_country} UNESCO World Heritage Sites Dashboard"
+            return {
+                all_sites_df_state: new_df,
+                filtered_sites_df_state: new_df.copy(),
+                sites_cards_area: updated_cards_layout,
+                map_output: updated_map_html,
+                search_box: gr.update(value=""),
+                main_title_md: gr.update(value=updated_title),
+                scrape_data_button: gr.update(visible=False),
+                scraper_instructions_md: gr.update(visible=False, value="")
+            }
+
+    # --- Function to show scraper instructions ---
+    def show_scraper_instructions(country_name):
+        instructions = f"""To generate data for **{country_name}**, please run the following command in your terminal from the project's root directory:
+
+```bash
+python scraper.py --country "{country_name}"
+```
+
+After running the command, please re-select **{country_name}** from the dropdown in the app to load the new data."""
+        return gr.update(value=instructions, visible=True)
+
     # --- Connect Event Handlers ---
     search_box.submit(
         fn=update_search_results,
         inputs=[
-            search_box, all_sites_df_state,
+            search_box, all_sites_df_state, # all_sites_df_state will hold current country's data
             main_content_area, detailed_view_area, detail_site_name_md,
             detail_image_display, detail_desc_text, detail_location_text,
             detail_year_text, detail_unesco_text
@@ -290,43 +377,80 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
     back_to_list_btn.click(
         fn=back_to_list_view_fn,
-        inputs=[], # No inputs needed
-        outputs=[main_content_area, detailed_view_area] # Correctly defined
+        inputs=[],
+        outputs=[main_content_area, detailed_view_area]
+    )
+
+    country_dropdown.change(
+        fn=update_country_data,
+        inputs=[
+            country_dropdown, # selected_country
+            # UI component references needed for render_site_cards inside update_country_data
+            main_content_area, detailed_view_area, detail_site_name_md,
+            detail_image_display, detail_desc_text, detail_location_text,
+            detail_year_text, detail_unesco_text
+        ],
+        outputs=[
+            all_sites_df_state,       # Update the main DataFrame state
+            filtered_sites_df_state,  # Update the filtered DataFrame state (reset to all for new country)
+            sites_cards_area,         # Update the displayed cards
+            map_output,               # Update the map
+            search_box,               # Clear search box
+            main_title_md,            # Update the main title
+            scrape_data_button,       # Show/hide scrape button
+            scraper_instructions_md   # Show/hide instructions
+        ]
+    )
+
+    scrape_data_button.click(
+        fn=show_scraper_instructions,
+        inputs=[country_dropdown], # Pass the selected country name
+        outputs=[scraper_instructions_md]
     )
 
     # --- App Load Action ---
-    def initial_load(all_sites_data_val,
+    def initial_load(current_all_sites_df, # Name reflects it's from all_sites_df_state
                      main_content_area_ref, detailed_view_area_ref,
                      detail_site_name_md_ref, detail_image_display_ref,
                      detail_desc_text_ref, detail_location_text_ref,
                      detail_year_text_ref, detail_unesco_text_ref):
-        filtered_df = all_sites_data_val # Initially, all sites are "filtered"
+        # current_all_sites_df is initial_df (Italy data) on first load
+        # No filtering on initial load, so filtered_df is a copy of current_all_sites_df
+        filtered_df_on_load = current_all_sites_df.copy()
+
         initial_cards_layout = render_site_cards(
-            filtered_df, all_sites_data_val, # Pass all_sites_data_val for click handlers
+            filtered_df_on_load, current_all_sites_df, # Pass current_all_sites_df for click handlers
             main_content_area_ref, detailed_view_area_ref,
             detail_site_name_md_ref, detail_image_display_ref, detail_desc_text_ref,
             detail_location_text_ref, detail_year_text_ref, detail_unesco_text_ref
         )
-        initial_map_html = generate_map_html(filtered_df)
-        return initial_cards_layout, initial_map_html, filtered_df
+        initial_map_html = generate_map_html(filtered_df_on_load)
+        return initial_cards_layout, initial_map_html, filtered_df_on_load
 
     app.load(
         fn=initial_load,
         inputs=[
-            all_sites_df_state, main_content_area, detailed_view_area,
+            all_sites_df_state, # This will pass the initial_df (Italy data)
+            main_content_area, detailed_view_area,
             detail_site_name_md, detail_image_display, detail_desc_text,
             detail_location_text, detail_year_text, detail_unesco_text
         ],
-        outputs=[sites_cards_area, map_output, filtered_sites_df_state]
+        outputs=[sites_cards_area, map_output, filtered_sites_df_state] # filtered_sites_df_state gets copy of Italy data
     )
 
-# Removed the old manual binding block, as app.load handles initial card rendering with correct bindings.
-
 if __name__ == "__main__":
-    if initial_df.empty and not os.path.exists(DATA_FILE):
-        print(f"CRITICAL: Data file {DATA_FILE} not found. The app will launch but will be mostly empty.")
-        print("Please ensure 'scraper.py' has been run successfully.")
+    # Initial check refers to Italy data by default due to load_data() default
+    italy_data_file = os.path.join("data", "unesco_sites_italy.csv")
+    if initial_df.empty and not os.path.exists(italy_data_file):
+        print(f"CRITICAL: Default data file for Italy ('{italy_data_file}') not found. The app will launch but may be mostly empty.")
+        print("Please ensure 'scraper.py' has been run successfully for 'Italy'.")
     elif initial_df.empty:
-        print(f"WARNING: Data file {DATA_FILE} was found but appears to be empty or failed to load correctly.")
+        print(f"WARNING: Default data file for Italy ('{italy_data_file}') was found but appears to be empty or failed to load correctly.")
+
+    # Check for France data file as well, just as a common example.
+    france_data_file = os.path.join("data", "unesco_sites_france.csv")
+    if not os.path.exists(france_data_file):
+        print(f"INFO: Data file for France ('{france_data_file}') not found. You may need to run the scraper for France.")
+
     print("Launching Gradio app...")
     app.launch()
