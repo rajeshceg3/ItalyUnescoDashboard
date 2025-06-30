@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import importlib
+import site # Added site module
 from functools import partial
 import pandas as pd
 import gradio as gr
@@ -12,57 +13,55 @@ def install_dependencies():
     print("Consider using a Python virtual environment for managing dependencies for this application.")
     libraries = ["gradio", "pandas", "folium"]
     all_installed = True
+
+    # Get user site packages path once
+    user_site_dir = site.getusersitepackages()
+    if user_site_dir: # Can be a string or a list of strings
+        if isinstance(user_site_dir, list):
+            user_site_dir = user_site_dir[0] # Take the first one
+        if user_site_dir not in sys.path:
+            print(f"Adding user site packages directory {user_site_dir} to sys.path.")
+            sys.path.append(user_site_dir)
+    else:
+        print("Warning: Could not determine user site packages directory. Pip installs might not be found without shell restart.")
+
     for lib_name in libraries:
         try:
             importlib.import_module(lib_name)
             print(f"{lib_name} is already installed.")
         except ImportError:
-            print(f"Installing {lib_name} using pip install --user...")
+            print(f"Attempting to install {lib_name} using pip install --user...")
             try:
-                user_site_packages = subprocess.check_output(
-                    [sys.executable, "-m", "site", "--user-site"],
-                    text=True,
-                    stderr=subprocess.STDOUT
-                ).strip()
-
-                user_bin_path = os.path.expanduser("~/.local/bin")
-
-                if user_bin_path not in os.environ["PATH"]:
-                    print(f"Adding {user_bin_path} to PATH")
-                    os.environ["PATH"] = f"{user_bin_path}:{os.environ['PATH']}"
-
-                if "PYTHONPATH" not in os.environ:
-                    os.environ["PYTHONPATH"] = user_site_packages
-                elif user_site_packages not in os.environ["PYTHONPATH"]:
-                    os.environ["PYTHONPATH"] = f"{user_site_packages}:{os.environ['PYTHONPATH']}"
-
-                # print(f"DEBUG: Current PATH for app.py: {os.environ.get('PATH', 'Not set')}")
-                # print(f"DEBUG: Current PYTHONPATH for app.py: {os.environ.get('PYTHONPATH', 'Not set')}")
-
+                # Attempt to install the package
                 subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", lib_name])
+                print(f"Successfully ran pip install for {lib_name}.")
 
-                if user_site_packages not in sys.path:
-                    print(f"Adding {user_site_packages} to sys.path for app.py")
-                    sys.path.append(user_site_packages)
+                # Invalidate import caches to ensure new package is found
+                importlib.invalidate_caches()
 
-                importlib.import_module(lib_name) # Verify installation
-                print(f"Successfully installed and imported {lib_name}.")
+                # Try importing again
+                importlib.import_module(lib_name)
+                print(f"Successfully imported {lib_name} after installation.")
+
             except subprocess.CalledProcessError as e:
-                print(f"Error installing {lib_name}: {e}")
-                output = e.output.decode('utf-8') if e.output else "No output"
+                print(f"Error during 'pip install --user {lib_name}': {e}")
+                output = e.output.decode('utf-8') if e.output and hasattr(e.output, 'decode') else "No output captured"
                 print(f"Pip install output for {lib_name}:\n{output}")
+                print(f"Please try installing {lib_name} manually using 'pip install --user {lib_name}' and restart the application.")
                 all_installed = False
             except ImportError as ie:
-                print(f"Failed to import {lib_name} even after attempting installation and PATH/PYTHONPATH updates.")
-                print(f"Current sys.path for {lib_name}: {sys.path}")
+                print(f"Failed to import {lib_name} even after attempting installation.")
                 print(f"ImportError for {lib_name}: {ie}")
+                print(f"Current sys.path: {sys.path}")
+                print(f"If you recently installed this package, you might need to restart the application or your environment.")
                 all_installed = False
             except Exception as ex:
-                print(f"An unexpected error occurred during installation of {lib_name}: {ex}")
+                print(f"An unexpected error occurred during the installation or import of {lib_name}: {ex}")
                 all_installed = False
 
     if not all_installed:
-        print("One or more essential libraries could not be installed. Exiting.")
+        print("\nOne or more essential libraries could not be installed or imported correctly.")
+        print("Please review the error messages above and ensure the libraries are installed in a location accessible by Python.")
         sys.exit(1)
 
 install_dependencies()
@@ -79,38 +78,43 @@ def load_data(country_name="Italy"):
     """Loads data from CSV for a given country and adds dummy coordinates if needed."""
     data_file_path = os.path.join("data", f"unesco_sites_{country_name.lower().replace(' ', '_')}.csv")
     print(f"Attempting to load data for {country_name} from: {data_file_path}")
+
+    if not os.path.exists(data_file_path):
+        print(f"Error: Data file '{data_file_path}' not found for {country_name}. Scraper might need to be run for this country.")
+        return pd.DataFrame(columns=EXPECTED_COLUMNS)
+
     try:
-        if os.path.exists(data_file_path):
-            df = pd.read_csv(data_file_path)
+        df = pd.read_csv(data_file_path)
 
-            # Ensure all expected columns exist, fill with N/A or default if not
-            for col in EXPECTED_COLUMNS:
-                if col not in df.columns:
-                    if col == 'Latitude':
-                        df[col] = DEFAULT_LATITUDE
-                    elif col == 'Longitude':
-                        df[col] = DEFAULT_LONGITUDE
-                    else:
-                        df[col] = "N/A"
+        # Ensure all expected columns exist, fill with N/A or default if not
+        for col in EXPECTED_COLUMNS:
+            if col not in df.columns:
+                if col == 'Latitude':
+                    df[col] = DEFAULT_LATITUDE
+                elif col == 'Longitude':
+                    df[col] = DEFAULT_LONGITUDE
+                else:
+                    df[col] = "N/A"
 
-            # Ensure no NaN in coordinates for Folium
-            df['Latitude'] = pd.to_numeric(df['Latitude'], errors='coerce').fillna(DEFAULT_LATITUDE)
-            df['Longitude'] = pd.to_numeric(df['Longitude'], errors='coerce').fillna(DEFAULT_LONGITUDE)
+        # Ensure no NaN in coordinates for Folium
+        df['Latitude'] = pd.to_numeric(df['Latitude'], errors='coerce').fillna(DEFAULT_LATITUDE)
+        df['Longitude'] = pd.to_numeric(df['Longitude'], errors='coerce').fillna(DEFAULT_LONGITUDE)
 
-            # Fill NA for other text fields
-            for col in ['Site Name', 'Image URL', 'Location', 'Year Listed', 'UNESCO Data', 'Description']:
-                if col in df.columns: # Should always be true now
-                    df[col] = df[col].fillna("N/A")
+        # Fill NA for other text fields
+        # Note: Latitude and Longitude are already handled and are numeric.
+        text_cols = [col for col in EXPECTED_COLUMNS if col not in ['Latitude', 'Longitude']]
+        for col in text_cols:
+            if col in df.columns: # Check if column exists before fillna
+                df[col] = df[col].fillna("N/A")
+            # If col was not in df.columns, it was already created and filled with "N/A" or default above.
 
-            # Reorder columns to EXPECTED_COLUMNS order just in case CSV has different order
-            df = df.reindex(columns=EXPECTED_COLUMNS)
-            print(f"Successfully loaded data for {country_name}.")
-            return df
-        else:
-            print(f"Error: Data file '{data_file_path}' not found for {country_name}. Scraper might need to be run for this country.")
-            return pd.DataFrame(columns=EXPECTED_COLUMNS)
+        # Reorder columns to EXPECTED_COLUMNS order just in case CSV has different order
+        df = df.reindex(columns=EXPECTED_COLUMNS)
+        print(f"Successfully loaded and processed data for {country_name}.")
+        return df
     except Exception as e:
-        print(f"Error loading data for {country_name} from {data_file_path}: {e}")
+        # This catches errors from pd.read_csv() or any processing steps above
+        print(f"Error processing data for {country_name} from {data_file_path}: {e}")
         return pd.DataFrame(columns=EXPECTED_COLUMNS)
 
 initial_df = load_data() # Loads "Italy" by default
