@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import importlib
+import site # Added site module
 
 def install_libraries():
     """Installs necessary Python libraries and verifies installation."""
@@ -17,75 +18,56 @@ def install_libraries():
             continue
     
     all_installed = True
+
+    # Get user site packages path once
+    user_site_dir = site.getusersitepackages()
+    if user_site_dir: # Can be a string or a list of strings
+        if isinstance(user_site_dir, list):
+            user_site_dir = user_site_dir[0] # Take the first one
+        if user_site_dir not in sys.path:
+            print(f"Adding user site packages directory {user_site_dir} to sys.path.")
+            sys.path.append(user_site_dir)
+    else:
+        print("Warning: Could not determine user site packages directory. Pip installs might not be found without shell restart.")
+
     for lib_name in libraries:
-        # Standardize module name for import check (e.g., beautifulsoup4 -> bs4)
         module_name = lib_name
         if lib_name == "beautifulsoup4":
             module_name = "bs4"
 
         try:
             importlib.import_module(module_name)
-            print(f"{lib_name} is already installed.")
+            print(f"{lib_name} (as {module_name}) is already installed.")
         except ImportError:
-            print(f"Installing {lib_name} using pip install --user...")
+            print(f"Attempting to install {lib_name} using pip install --user...")
             try:
-                # Consistently use --user and ensure PATH is updated for user-installed packages
-                user_site_packages = subprocess.check_output(
-                    [sys.executable, "-m", "site", "--user-site"],
-                    text=True,
-                    stderr=subprocess.STDOUT # Capture stderr as well
-                ).strip()
-
-                user_bin_path = os.path.expanduser("~/.local/bin")
-
-                # Ensure user bin path is in PATH
-                if user_bin_path not in os.environ["PATH"]:
-                    print(f"Adding {user_bin_path} to PATH")
-                    os.environ["PATH"] = f"{user_bin_path}:{os.environ['PATH']}"
-
-                # Ensure user site packages is in PYTHONPATH
-                if "PYTHONPATH" not in os.environ:
-                    os.environ["PYTHONPATH"] = user_site_packages
-                elif user_site_packages not in os.environ["PYTHONPATH"]:
-                    os.environ["PYTHONPATH"] = f"{user_site_packages}:{os.environ['PYTHONPATH']}"
-
-                print(f"Current PATH: {os.environ.get('PATH', 'Not set')}")
-                print(f"Current PYTHONPATH: {os.environ.get('PYTHONPATH', 'Not set')}")
-
                 subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", lib_name])
-                # subprocess.check_call raises CalledProcessError on non-zero exit,
-                # which is caught by the general 'except subprocess.CalledProcessError as e:' block.
-                # So, explicit check of return code here is redundant.
+                print(f"Successfully ran pip install for {lib_name}.")
 
-                # Re-check import after attempting to fix environment
-                # For subprocess calls, environment changes in os.environ might not propagate directly
-                # depending on how subprocess is used. However, for direct imports later in *this* script,
-                # sys.path should be updated by site.py based on PYTHONPATH.
-                # We might need to sys.path.append(user_site_packages) if direct import still fails.
-                if user_site_packages not in sys.path:
-                    print(f"Adding {user_site_packages} to sys.path")
-                    sys.path.append(user_site_packages)
+                importlib.invalidate_caches() # Invalidate caches before re-import
 
                 importlib.import_module(module_name) # Try importing again
-                print(f"Successfully installed and imported {lib_name}.")
+                print(f"Successfully imported {lib_name} (as {module_name}) after installation.")
 
             except subprocess.CalledProcessError as e:
-                print(f"Error installing {lib_name}: {e}")
-                output = e.output.decode('utf-8') if e.output else "No output"
-                print(f"Pip install output:\n{output}")
+                print(f"Error during 'pip install --user {lib_name}': {e}")
+                output = e.output.decode('utf-8') if e.output and hasattr(e.output, 'decode') else "No output captured"
+                print(f"Pip install output for {lib_name}:\n{output}")
+                print(f"Please try installing {lib_name} manually using 'pip install --user {lib_name}' and restart the script.")
                 all_installed = False
             except ImportError as ie:
-                print(f"Failed to import {lib_name} even after attempting installation and PATH/PYTHONPATH updates.")
-                print(f"Current sys.path: {sys.path}")
+                print(f"Failed to import {lib_name} (as {module_name}) even after attempting installation.")
                 print(f"ImportError: {ie}")
+                print(f"Current sys.path: {sys.path}")
+                print(f"If you recently installed this package, you might need to restart the script or your environment.")
                 all_installed = False
             except Exception as ex:
-                print(f"An unexpected error occurred during installation of {lib_name}: {ex}")
+                print(f"An unexpected error occurred during the installation or import of {lib_name}: {ex}")
                 all_installed = False
 
-
     if not all_installed:
-        print("One or more libraries could not be installed. Please check the errors above and the environment settings.")
+        print("\nOne or more essential libraries could not be installed or imported correctly.")
+        print("Please review the error messages above and ensure the libraries are installed in a location accessible by Python.")
         sys.exit(1)
 
 # Call install_libraries at the beginning of the script execution
