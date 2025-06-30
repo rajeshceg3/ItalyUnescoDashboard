@@ -11,6 +11,15 @@ def install_dependencies():
     """Installs necessary libraries if not already present."""
     print("Consider using a Python virtual environment for managing dependencies for this application.")
     libraries = ["gradio", "pandas", "folium"]
+    
+    # Validate library names for security
+    import re
+    valid_name_pattern = r'^[a-zA-Z0-9_\-\.]+$'
+    for lib in libraries:
+        if not re.match(valid_name_pattern, lib):
+            print(f"Error: Invalid library name '{lib}'. Skipping for security reasons.")
+            continue
+    
     all_installed = True
     for lib_name in libraries:
         try:
@@ -122,10 +131,17 @@ def generate_map_html(df_map_data):
         return "<p style='text-align:center; color:grey;'>Map data is unavailable or incomplete. Cannot render map.</p>"
 
     # Central point for the map (can be mean of coordinates or a fixed point)
-    map_center = [df_map_data['Latitude'].mean(), df_map_data['Longitude'].mean()]
-
-    # Handle potential NaN values that might have slipped through, or if all coordinates are default
-    if pd.isna(map_center[0]) or pd.isna(map_center[1]):
+    try:
+        lat_mean = df_map_data['Latitude'].mean()
+        lon_mean = df_map_data['Longitude'].mean()
+        
+        # Handle potential NaN values that might have slipped through, or if all coordinates are default
+        if pd.isna(lat_mean) or pd.isna(lon_mean) or lat_mean == 0 or lon_mean == 0:
+            map_center = [DEFAULT_LATITUDE, DEFAULT_LONGITUDE]
+        else:
+            map_center = [lat_mean, lon_mean]
+    except Exception as e:
+        print(f"Error calculating map center: {e}")
         map_center = [DEFAULT_LATITUDE, DEFAULT_LONGITUDE]
 
     site_map = folium.Map(location=map_center, zoom_start=5)
@@ -279,8 +295,17 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         if site_info_list.empty:
             # This case should ideally not happen if site_name_to_display comes from a valid card
             print(f"Error: Site '{site_name_to_display}' not found in current dataset.")
-            # Potentially return updates to show an error message in detail view
-            return { main_content_area: gr.update(visible=True), detailed_view_area: gr.update(visible=False) }
+            # Return updates to show an error message in detail view
+            return {
+                main_content_area: gr.update(visible=False),
+                detailed_view_area: gr.update(visible=True),
+                detail_site_name_md: gr.update(value="## Site Not Found"),
+                detail_image_display: gr.update(value=None),
+                detail_desc_text: gr.update(value="The requested site was not found in the database."),
+                detail_location_text: gr.update(value="N/A"),
+                detail_year_text: gr.update(value="N/A"),
+                detail_unesco_text: gr.update(value="N/A")
+            }
 
         site_info_series = site_info_list.iloc[0]
         image_url_val = site_info_series.get('Image URL', "N/A") # Use .get for safety

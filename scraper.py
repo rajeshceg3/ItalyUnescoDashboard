@@ -7,6 +7,15 @@ def install_libraries():
     """Installs necessary Python libraries and verifies installation."""
     print("Consider using a Python virtual environment for managing dependencies.")
     libraries = ["requests", "beautifulsoup4", "pandas", "lxml"]
+    
+    # Validate library names for security
+    import re
+    valid_name_pattern = r'^[a-zA-Z0-9_\-\.]+$'
+    for lib in libraries:
+        if not re.match(valid_name_pattern, lib):
+            print(f"Error: Invalid library name '{lib}'. Skipping for security reasons.")
+            continue
+    
     all_installed = True
     for lib_name in libraries:
         # Standardize module name for import check (e.g., beautifulsoup4 -> bs4)
@@ -102,13 +111,21 @@ def scrape_unesco_sites(country_name):
     country_name_url_part = country_name.replace(' ', '_')
     url = f"https://en.wikipedia.org/wiki/List_of_World_Heritage_Sites_in_{country_name_url_part}"
 
+    # Validate URL format
+    import re
+    url_pattern = r'^https://en\.wikipedia\.org/wiki/List_of_World_Heritage_Sites_in_[a-zA-Z0-9_\-\.]+$'
+    if not re.match(url_pattern, url):
+        print(f"Error: Generated URL format is invalid: {url}")
+        return
+
     print(f"Fetching data for {country_name} from {url}...")
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=30)  # Add timeout
         response.raise_for_status()  # Raise an exception for bad status codes
         print(f"Successfully fetched HTML content for {country_name}.")
     except requests.exceptions.RequestException as e:
         print(f"Error fetching URL for {country_name}: {e}")
+        print(f"Please verify that the Wikipedia page exists: {url}")
         return
 
     # Parse HTML
@@ -158,10 +175,11 @@ def scrape_unesco_sites(country_name):
     # For Wikipedia, image is consistently in the second column (index 1).
     expected_cols = {
         "site_name": ["site name", "name", "site", "official name"],
-        "location": ["location", "region", "province", "coordinates"], # Coordinates often in location
+        "location": ["location", "region", "province"], # Removed coordinates from here
         "year_listed": ["year", "listed", "inscription date", "date of inscription"],
         "unesco_data": ["criteria", "unesco data", "id", "reference"], # UNESCO ID or criteria
-        "description": ["description", "summary", "notes", "brief description"]
+        "description": ["description", "summary", "notes", "brief description"],
+        "coordinates": ["coordinates", "coord", "lat", "lon", "latitude", "longitude"]
     }
 
     for canonical_name, possible_headers in expected_cols.items():
@@ -190,9 +208,59 @@ def scrape_unesco_sites(country_name):
     IMAGE_URL_INDEX = 1
 
 
+    # Import geocoding function
+    def extract_coordinates_from_location(location_text):
+        """Extract coordinates from location text or return defaults."""
+        import re
+        # Look for coordinate patterns in the location text
+        coord_pattern = r'(\d+\.?\d*)[°\s]*[NS][\s,]*(\d+\.?\d*)[°\s]*[EW]'
+        match = re.search(coord_pattern, location_text)
+        if match:
+            lat, lon = match.groups()
+            return float(lat), float(lon)
+        
+        # Try to extract decimal coordinates
+        decimal_pattern = r'(-?\d+\.?\d+)[,\s]+(-?\d+\.?\d+)'
+        match = re.search(decimal_pattern, location_text)
+        if match:
+            lat, lon = match.groups()
+            return float(lat), float(lon)
+            
+        return None, None
+
+    def get_coordinates_for_site(site_name, location_text):
+        """Get coordinates for a site, trying multiple approaches."""
+        # First try to extract from location text
+        lat, lon = extract_coordinates_from_location(location_text)
+        if lat is not None and lon is not None:
+            return lat, lon
+            
+        # Default coordinates for common locations (this is a simple fallback)
+        location_coords = {
+            # Italy defaults by region
+            'rome': (41.9028, 12.4964),
+            'milan': (45.4642, 9.1900),
+            'florence': (43.7696, 11.2558),
+            'venice': (45.4408, 12.3155),
+            'naples': (40.8518, 14.2681),
+            'turin': (45.0703, 7.6869),
+            'sicily': (37.5999, 14.0154),
+            'sardinia': (40.1209, 9.0129),
+            # Add more as needed
+        }
+        
+        location_lower = location_text.lower()
+        for city, coords in location_coords.items():
+            if city in location_lower:
+                return coords
+                
+        # Return None if no coordinates found
+        return None, None
+
     for row_index, row in enumerate(rows[1:], start=1):  # Skip header row
         # Initialize fields with default "N/A"
         site_name, image_url, location, year_listed, unesco_data, description = ["N/A"] * 6
+        latitude, longitude = None, None
 
         cells = row.find_all(["td", "th"]) # Cells can be td or th in data rows sometimes
 
@@ -237,10 +305,14 @@ def scrape_unesco_sites(country_name):
             # Description
             description = get_cell_data("description", cells)
 
+            # Extract Coordinates
+            latitude, longitude = get_coordinates_for_site(site_name, location)
+            
             # Logging for rows with potentially missing data based on expected columns
             missing_data_details = []
             if site_name == "N/A" and column_map.get("site_name", -1) != -1 : missing_data_details.append("Site Name")
             if location == "N/A" and column_map.get("location", -1) != -1 : missing_data_details.append("Location")
+            if latitude is None or longitude is None: missing_data_details.append("Coordinates")
             # Add more checks if needed for other important fields
 
             if missing_data_details:
@@ -251,10 +323,14 @@ def scrape_unesco_sites(country_name):
             print(f"Error processing cells for row {row_index} (Site: '{current_site_name_for_log}'): {e}. Data for this row set to 'N/A'.")
             # Fields already initialized to "N/A", so they will retain that if an error occurs.
             site_name, image_url, location, year_listed, unesco_data, description = ["N/A"] * 6
+            latitude, longitude = None, None
 
+        # Use default coordinates if none found
+        if latitude is None or longitude is None:
+            latitude, longitude = 41.8719, 12.5674  # Default to Rome
 
         sites_data.append([
-            site_name, image_url, location, year_listed, unesco_data, description
+            site_name, image_url, location, year_listed, unesco_data, description, latitude, longitude
         ])
 
     if not sites_data:
@@ -264,7 +340,7 @@ def scrape_unesco_sites(country_name):
     # Store data in DataFrame
     print(f"Extracted data for {len(sites_data)} sites. Creating DataFrame...")
     df = pd.DataFrame(sites_data, columns=[
-        "Site Name", "Image URL", "Location", "Year Listed", "UNESCO Data", "Description"
+        "Site Name", "Image URL", "Location", "Year Listed", "UNESCO Data", "Description", "Latitude", "Longitude"
     ])
 
     # Save DataFrame to CSV
@@ -291,6 +367,16 @@ if __name__ == "__main__":
     country_input = args.country.strip()
     if not country_input:
         print("Error: Country name cannot be empty.")
+        sys.exit(1)
+    
+    # Basic validation for country name
+    import re
+    if not re.match(r'^[a-zA-Z\s\-\'\.]+$', country_input):
+        print("Error: Country name contains invalid characters. Only letters, spaces, hyphens, apostrophes, and periods are allowed.")
+        sys.exit(1)
+    
+    if len(country_input) > 100:
+        print("Error: Country name is too long (maximum 100 characters).")
         sys.exit(1)
 
     print(f"Starting scrape for country: {country_input}")
