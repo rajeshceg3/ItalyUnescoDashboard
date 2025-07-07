@@ -332,7 +332,7 @@ def scrape_unesco_sites(country_name):
         df.to_csv(csv_path, index=False)
         print(f"Successfully scraped {len(df)} sites for {country_name}.")
         print(f"Data saved to {csv_path}")
-    except Exception as e:
+    except IOError as e:
         print(f"Error saving DataFrame to CSV for {country_name}: {e}")
 
 
