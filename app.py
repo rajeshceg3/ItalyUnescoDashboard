@@ -299,32 +299,29 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         return new_cards_layout, new_map_html, filtered_df
 
-    def show_site_details(site_name_to_display, current_all_sites_df): # Renamed all_sites_data_val
+    def show_site_details(site_name_to_display, current_all_sites_df):
         """Handles click on 'View Details' button."""
-        import requests
-        site_id = current_all_sites_df[current_all_sites_df['Site Name'] == site_name_to_display].index[0]
-        response = requests.get(f"http://127.0.0.1:5000/api/sites/{site_id}")
+        site_row = current_all_sites_df[current_all_sites_df['Site Name'] == site_name_to_display]
 
-        if response.status_code == 404:
-            return [
+        if site_row.empty:
+            # Handle case where site name is not found
+            return (
                 gr.update(visible=True),
                 gr.update(visible=False),
                 gr.update(value="## Site Not Found"),
                 gr.update(value=None),
-                gr.update(value="The requested site was not found in the database."),
+                gr.update(value="The requested site is not available in the current dataset."),
                 gr.update(value="N/A"),
                 gr.update(value="N/A"),
                 gr.update(value="N/A")
-            ]
+            )
 
-        site_info_series = pd.Series(response.json())
+        site_info_series = site_row.iloc[0]
+
         image_url_val = site_info_series.get('Image URL', "N/A")
-        if pd.isna(image_url_val) or image_url_val == "N/A":
-            image_to_display = None
-        else:
-            image_to_display = image_url_val
+        image_to_display = None if pd.isna(image_url_val) or image_url_val == "N/A" else image_url_val
 
-        return [
+        return (
             gr.update(visible=True),
             gr.update(visible=False),
             gr.update(value=f"## {site_info_series.get('Site Name', 'N/A')}"),
@@ -333,7 +330,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
             gr.update(value=site_info_series.get('Location', 'N/A')),
             gr.update(value=site_info_series.get('Year Listed', 'N/A')),
             gr.update(value=site_info_series.get('UNESCO Data', 'N/A'))
-        ]
+        )
 
     def back_to_list_view_fn(): # No changes needed
         """Handles click on 'Back to List' button."""

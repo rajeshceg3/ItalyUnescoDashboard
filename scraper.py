@@ -300,10 +300,9 @@ def scrape_unesco_sites(country_name):
             if missing_data_details:
                 print(f"Warning: Row {row_index} (Site: '{site_name if site_name != 'N/A' else 'Unknown'}') - Data for '{', '.join(missing_data_details)}' defaulted to 'N/A' due to missing cell or content.")
 
-        except Exception as e:
+        except (AttributeError, IndexError) as e:
             current_site_name_for_log = site_name if site_name != "N/A" else "Unknown"
-            print(f"Error processing cells for row {row_index} (Site: '{current_site_name_for_log}'): {e}. Data for this row set to 'N/A'.")
-            # Fields already initialized to "N/A", so they will retain that if an error occurs.
+            print(f"Error processing cells for row {row_index} (Site: '{current_site_name_for_log}'): {e}. This might be due to an unexpected table structure. Data for this row set to 'N/A'.")
             site_name, image_url, location, year_listed, unesco_data, description = ["N/A"] * 6
             latitude, longitude = None, None
 
