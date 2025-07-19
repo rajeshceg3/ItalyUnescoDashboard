@@ -135,7 +135,7 @@ class TestAppFunctionality(unittest.TestCase):
         self.assertIn("Map data is unavailable", result, "Should show unavailable message")
         
     def test_show_site_details_with_missing_site(self):
-        """Test show_site_details function with non-existent site."""
+        """Test show_site_details function with a non-existent site."""
         from app import show_site_details
         
         # Create test data
@@ -148,12 +148,16 @@ class TestAppFunctionality(unittest.TestCase):
             'UNESCO Data': ['Test Data']
         })
         
-        # Test with non-existent site
+        # Test with a non-existent site
         result = show_site_details("Non-existent Site", test_data)
         
-        # Verify the result
-        self.assertIsInstance(result, dict, "Should return dictionary")
-        # The function should handle the missing site gracefully
+        # Verify the result - expecting a tuple of Gradio updates
+        self.assertIsInstance(result, tuple, "Should return a tuple of Gradio updates")
+
+        # Check the updated value for the site name markdown component
+        site_name_update = result[2]  # Third element in the tuple
+        self.assertIn("Site Not Found", site_name_update.get('value', ''),
+                      "Should display 'Site Not Found' message")
         
     def test_coordinate_validation_in_scraper_output(self):
         """Test that scraper output includes coordinate validation."""
