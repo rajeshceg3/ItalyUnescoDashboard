@@ -102,7 +102,10 @@ def scrape_unesco_sites(country_name):
 
     print(f"Fetching data for {country_name} from {url}...")
     try:
-        response = requests.get(url, timeout=30)  # Add timeout
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=30)  # Add timeout and headers
         response.raise_for_status()  # Raise an exception for bad status codes
         print(f"Successfully fetched HTML content for {country_name}.")
     except requests.exceptions.RequestException as e:
