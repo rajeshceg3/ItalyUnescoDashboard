@@ -143,17 +143,19 @@ def get_site(site_id):
     return jsonify(site_data)
 
 # --- Map Generation ---
-def generate_map_html(df_map_data):
-    """Generates an HTML representation of a Folium map with markers for sites."""
+def generate_map_html(df_map_data, route_data=None):
+    """
+    Generates an HTML representation of a Folium map with markers for sites.
+    If route_data is provided, it draws the route on the map.
+    """
     if df_map_data.empty or not all(col in df_map_data.columns for col in ['Latitude', 'Longitude', 'Site Name']):
         return "<p style='text-align:center; color:grey;'>Map data is unavailable or incomplete. Cannot render map.</p>"
 
-    # Central point for the map (can be mean of coordinates or a fixed point)
+    # Central point for the map
     try:
         lat_mean = df_map_data['Latitude'].mean()
         lon_mean = df_map_data['Longitude'].mean()
         
-        # Handle potential NaN values that might have slipped through, or if all coordinates are default
         if pd.isna(lat_mean) or pd.isna(lon_mean) or lat_mean == 0 or lon_mean == 0:
             map_center = [DEFAULT_LATITUDE, DEFAULT_LONGITUDE]
         else:
@@ -164,84 +166,220 @@ def generate_map_html(df_map_data):
 
     site_map = folium.Map(location=map_center, zoom_start=5)
 
-    for _, row in df_map_data.iterrows():
-        try:
-            lat = float(row['Latitude'])
-            lon = float(row['Longitude'])
-            if pd.isna(lat) or pd.isna(lon):
-                print(f"Skipping site {row['Site Name']} due to invalid coordinates.")
+    # Draw Route if available
+    if route_data:
+        points = []
+        for i, site in enumerate(route_data):
+            try:
+                lat = float(site['Latitude'])
+                lon = float(site['Longitude'])
+                points.append([lat, lon])
+
+                # Add ordered marker
+                folium.Marker(
+                    location=[lat, lon],
+                    popup=folium.Popup(f"<b>#{i+1}: {site['Site Name']}</b>", max_width=300),
+                    tooltip=f"{i+1}. {site['Site Name']}",
+                    icon=folium.Icon(color='red', icon='info-sign', prefix='fa')
+                ).add_to(site_map)
+            except Exception:
                 continue
 
-            # Prepare popup content
-            site_name = row.get('Site Name', 'N/A')
-            image_url = row.get('Image URL', '#')
-            location_text = row.get('Location', 'N/A') # Renamed to avoid conflict with folium.Marker's location
-            year_listed = row.get('Year Listed', 'N/A')
-
-            popup_html = f"<b>{site_name}</b><br>"
-            if image_url != '#' and image_url != 'N/A' and pd.notna(image_url):
-                popup_html += f"<a href='{image_url}' target='_blank'>View Image</a><br>"
-            else:
-                popup_html += "No image available<br>"
-
-            # Add Location and Year Listed, handling N/A values
-            if location_text != 'N/A' and pd.notna(location_text):
-                popup_html += f"<b>Location:</b> {location_text}<br>"
-            if year_listed != 'N/A' and pd.notna(year_listed):
-                popup_html += f"<b>Year Listed:</b> {year_listed}"
-
-            # Clean up trailing <br> if year_listed was the last item and was N/A
-            if popup_html.endswith("<br>"):
-                 popup_html = popup_html[:-4]
-
-            folium.Marker(
-                location=[lat, lon],
-                popup=folium.Popup(popup_html, max_width=300),
-                tooltip=site_name # Keep tooltip simple with just the site name
+        if len(points) > 1:
+            folium.PolyLine(
+                locations=points,
+                color='blue',
+                weight=5,
+                opacity=0.7
             ).add_to(site_map)
-        except ValueError as ve:
-            print(f"Coordinate conversion error for site {row['Site Name']}: {ve}. Using default for map display if possible.")
-        except Exception as e:
-            print(f"Error adding marker for site {row['Site Name']}: {e}")
+
+    # Draw standard markers if no route (or in addition? Let's stick to just route markers if route is active to avoid clutter)
+    if not route_data:
+        for _, row in df_map_data.iterrows():
+            try:
+                lat = float(row['Latitude'])
+                lon = float(row['Longitude'])
+                if pd.isna(lat) or pd.isna(lon):
+                    continue
+
+                site_name = row.get('Site Name', 'N/A')
+                image_url = row.get('Image URL', '#')
+                location_text = row.get('Location', 'N/A')
+                year_listed = row.get('Year Listed', 'N/A')
+
+                popup_html = f"<b>{site_name}</b><br>"
+                if image_url != '#' and image_url != 'N/A' and pd.notna(image_url):
+                    popup_html += f"<a href='{image_url}' target='_blank'>View Image</a><br>"
+                else:
+                    popup_html += "No image available<br>"
+
+                if location_text != 'N/A' and pd.notna(location_text):
+                    popup_html += f"<b>Location:</b> {location_text}<br>"
+                if year_listed != 'N/A' and pd.notna(year_listed):
+                    popup_html += f"<b>Year Listed:</b> {year_listed}"
+
+                if popup_html.endswith("<br>"):
+                     popup_html = popup_html[:-4]
+
+                folium.Marker(
+                    location=[lat, lon],
+                    popup=folium.Popup(popup_html, max_width=300),
+                    tooltip=site_name
+                ).add_to(site_map)
+            except Exception as e:
+                print(f"Error adding marker for site {row['Site Name']}: {e}")
 
     return site_map._repr_html_()
+
+# --- Planning Logic Import ---
+try:
+    from planning import RoutePlanner
+except ImportError:
+    print("Warning: planning.py not found. Route optimization features will be disabled.")
+    RoutePlanner = None
+
 
 # --- Gradio UI Definition ---
 with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as app:
     # --- State Variables ---
     all_sites_df_state = gr.State(initial_df)
     filtered_sites_df_state = gr.State(initial_df.copy())
-    # selected_site_name_state = gr.State() # Not strictly needed if show_site_details directly updates components
 
-    # --- Main Content Area (Visible by default) ---
-    with gr.Column(elem_id="main_content_area_dynamic") as main_content_area:
-        main_title_md = gr.Markdown("# Italy UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic") # Italy default title
+    # --- Header ---
+    main_title_md = gr.Markdown("# Italy UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic")
 
-        countries = ["Italy", "France"] # Add more countries as data becomes available
-        country_dropdown = gr.Dropdown(
-            label="Select Country",
-            choices=countries,
-            value="Italy",
-            elem_id="country_dropdown_dynamic"
-        )
+    with gr.Tabs():
+        # --- TAB 1: EXPLORER ---
+        with gr.Tab("Site Explorer"):
+            with gr.Column(elem_id="main_content_area_dynamic") as main_content_area:
+                countries = ["Italy", "France"]
+                country_dropdown = gr.Dropdown(
+                    label="Select Country",
+                    choices=countries,
+                    value="Italy",
+                    elem_id="country_dropdown_dynamic"
+                )
 
-        search_box = gr.Textbox(label="Search by Name or Description", elem_id="search_box_dynamic")
-        gr.Markdown("## Map of Sites", elem_id="map_title_md_dynamic")
-        map_output = gr.HTML(elem_id="map_output_html_dynamic")
-        sites_cards_area = gr.Group(elem_id="sites_cards_area_dynamic") # Use Group for dynamic content
+                search_box = gr.Textbox(label="Search by Name or Description", elem_id="search_box_dynamic")
+                gr.Markdown("## Map of Sites", elem_id="map_title_md_dynamic")
+                map_output = gr.HTML(elem_id="map_output_html_dynamic")
+                sites_cards_area = gr.Group(elem_id="sites_cards_area_dynamic")
 
-        scrape_data_button = gr.Button("Generate/Refresh Data for Selected Country", visible=False, elem_id="scrape_data_button_dynamic")
-        scraper_instructions_md = gr.Markdown("", visible=False, elem_id="scraper_instructions_md_dynamic")
+                scrape_data_button = gr.Button("Generate/Refresh Data for Selected Country", visible=False, elem_id="scrape_data_button_dynamic")
+                scraper_instructions_md = gr.Markdown("", visible=False, elem_id="scraper_instructions_md_dynamic")
 
-    # --- Detailed View Area (Hidden by default) ---
-    with gr.Column(visible=False, elem_id="detailed_view_area_dynamic") as detailed_view_area:
-        back_to_list_btn = gr.Button("⬅️ Back to List", elem_id="back_to_list_btn_dynamic") # Changed elem_id
-        detail_site_name_md = gr.Markdown(elem_id="detail_site_name_md_dynamic") # Changed elem_id
-        detail_image_display = gr.Image(show_label=False, interactive=False, height=300, elem_id="detail_image_display_dynamic") # Changed elem_id
-        detail_desc_text = gr.Textbox(label="Description", interactive=False, lines=5, elem_id="detail_desc_text_dynamic") # Changed elem_id
-        detail_location_text = gr.Textbox(label="Location (Provinces)", interactive=False, elem_id="detail_location_text_dynamic") # Changed elem_id
-        detail_year_text = gr.Textbox(label="Year Listed", interactive=False, elem_id="detail_year_text_dynamic") # Changed elem_id
-        detail_unesco_text = gr.Textbox(label="UNESCO Data", interactive=False, elem_id="detail_unesco_text_dynamic") # Changed elem_id
+            # --- Detailed View (Hidden by default, nested here to swap with main content) ---
+            with gr.Column(visible=False, elem_id="detailed_view_area_dynamic") as detailed_view_area:
+                back_to_list_btn = gr.Button("⬅️ Back to List", elem_id="back_to_list_btn_dynamic")
+                detail_site_name_md = gr.Markdown(elem_id="detail_site_name_md_dynamic")
+                detail_image_display = gr.Image(show_label=False, interactive=False, height=300, elem_id="detail_image_display_dynamic")
+                detail_desc_text = gr.Textbox(label="Description", interactive=False, lines=5, elem_id="detail_desc_text_dynamic")
+                detail_location_text = gr.Textbox(label="Location (Provinces)", interactive=False, elem_id="detail_location_text_dynamic")
+                detail_year_text = gr.Textbox(label="Year Listed", interactive=False, elem_id="detail_year_text_dynamic")
+                detail_unesco_text = gr.Textbox(label="UNESCO Data", interactive=False, elem_id="detail_unesco_text_dynamic")
+
+        # --- TAB 2: MISSION PLANNER ---
+        with gr.Tab("Mission Planner"):
+            gr.Markdown("## Heritage Ops: Tactical Site Reconnaissance & Route Planning")
+            gr.Markdown("Select a squad of sites to visit and generate an optimized tactical route.")
+
+            with gr.Row():
+                with gr.Column(scale=1):
+                    # Initial choices from Italy (default)
+                    site_names = sorted(initial_df['Site Name'].tolist()) if not initial_df.empty else []
+
+                    mp_site_selector = gr.Dropdown(
+                        choices=site_names,
+                        label="Select Target Sites",
+                        multiselect=True,
+                        info="Select at least 2 sites."
+                    )
+
+                    mp_start_selector = gr.Dropdown(
+                        choices=site_names,
+                        label="Insertion Point (Start Site)",
+                        info="Optional. If empty, the first selected site is used."
+                    )
+
+                    mp_execute_btn = gr.Button("Execute Mission Plan", variant="primary")
+
+                with gr.Column(scale=2):
+                    mp_map_output = gr.HTML(label="Tactical Map")
+
+            with gr.Row():
+                mp_briefing_output = gr.Markdown(label="Operational Briefing")
+
+    # --- HELPER: Update Mission Planner Choices ---
+    def update_mp_choices(df):
+        if df.empty:
+            return gr.update(choices=[], value=[]), gr.update(choices=[], value=None)
+
+        # Ensure site names are strings and filter out NaNs
+        names = df['Site Name'].dropna().astype(str).tolist()
+        names = sorted(list(set(names))) # Deduplicate and sort
+
+        return gr.update(choices=names, value=[]), gr.update(choices=names, value=None)
+
+    # --- HELPER: Generate Mission Plan ---
+    def generate_mission_plan(selected_sites, start_site_name, all_sites_df):
+        if not RoutePlanner:
+            return "Error: Planning module not loaded.", "<p>Planning module missing.</p>"
+
+        if not selected_sites or len(selected_sites) < 2:
+            return "## Mission Aborted\n\nPlease select at least 2 sites to form a route.", ""
+
+        # Filter dataframe for selected sites
+        selected_df = all_sites_df[all_sites_df['Site Name'].isin(selected_sites)]
+
+        if selected_df.empty:
+            return "## Error\n\nSelected sites not found in database.", ""
+
+        # Determine start site
+        if start_site_name and start_site_name in selected_sites:
+            start_row = selected_df[selected_df['Site Name'] == start_site_name].iloc[0]
+        else:
+            start_row = selected_df.iloc[0] # Default to first found
+
+        start_site_dict = start_row.to_dict()
+
+        # Other sites
+        other_sites = []
+        for _, row in selected_df.iterrows():
+            if row['Site Name'] != start_site_dict['Site Name']:
+                other_sites.append(row.to_dict())
+
+        # Optimize
+        result = RoutePlanner.optimize_route(start_site_dict, other_sites)
+        route = result['route']
+        total_dist = result['total_distance_km']
+
+        # Generate Map
+        map_html = generate_map_html(all_sites_df, route_data=route)
+
+        # Generate Briefing
+        briefing = f"""
+# 📜 Operational Briefing
+
+**Mission Profile:** Multi-site Heritage Reconnaissance
+**Total Distance:** {total_dist} km
+**Stops:** {len(route)}
+
+### 🗺️ Route Itinerary
+"""
+        for i, site in enumerate(route):
+            briefing += f"{i+1}. **{site['Site Name']}** ({site['Location']})\n"
+
+        briefing += "\n*End of Briefing*"
+
+        return briefing, map_html
+
+    # Connect Mission Planner Events
+    mp_execute_btn.click(
+        fn=generate_mission_plan,
+        inputs=[mp_site_selector, mp_start_selector, all_sites_df_state],
+        outputs=[mp_briefing_output, mp_map_output]
+    )
+
 
     # --- Card Rendering Function ---
     def render_site_cards(df_render_data, all_sites_df_state_for_click_handler):
@@ -401,8 +539,25 @@ After running the command, please re-select **{country_name}** from the dropdown
         outputs=[main_content_area, detailed_view_area]
     )
 
+    # Function that wraps update_country_data but also updates mission planner choices
+    def update_country_and_mp_choices(selected_country):
+        # 1. Update general data
+        result_list = update_country_data(selected_country)
+        # result_list order:
+        # [0] all_sites_df_state (new_df)
+        # [1] filtered_sites_df_state (new_df copy)
+        # ... others ...
+
+        new_df = result_list[0]
+
+        # 2. Update Mission Planner Choices
+        mp_choices, mp_start = update_mp_choices(new_df)
+
+        # Combine results
+        return result_list + [mp_choices, mp_start]
+
     country_dropdown.change(
-        fn=update_country_data,
+        fn=update_country_and_mp_choices,
         inputs=[
             country_dropdown, # selected_country
         ],
@@ -414,7 +569,9 @@ After running the command, please re-select **{country_name}** from the dropdown
             search_box,               # Clear search box
             main_title_md,            # Update the main title
             scrape_data_button,       # Show/hide scrape button
-            scraper_instructions_md   # Show/hide instructions
+            scraper_instructions_md,  # Show/hide instructions
+            mp_site_selector,         # Update MP site selector choices
+            mp_start_selector         # Update MP start selector choices
         ]
     )
 
@@ -435,14 +592,18 @@ After running the command, please re-select **{country_name}** from the dropdown
             current_all_sites_df, # Pass current_all_sites_df for click handlers
         )
         initial_map_html = generate_map_html(filtered_df_on_load)
-        return initial_cards_layout, initial_map_html, filtered_df_on_load
+
+        # Also initialize MP choices
+        mp_choices, mp_start = update_mp_choices(current_all_sites_df)
+
+        return initial_cards_layout, initial_map_html, filtered_df_on_load, mp_choices, mp_start
 
     app.load(
         fn=initial_load,
         inputs=[
             all_sites_df_state, # This will pass the initial_df (Italy data)
         ],
-        outputs=[sites_cards_area, map_output, filtered_sites_df_state] # filtered_sites_df_state gets copy of Italy data
+        outputs=[sites_cards_area, map_output, filtered_sites_df_state, mp_site_selector, mp_start_selector] # filtered_sites_df_state gets copy of Italy data
     )
 
 if __name__ == "__main__":
