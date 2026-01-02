@@ -233,10 +233,11 @@ def generate_map_html(df_map_data, route_data=None):
 
 # --- Planning Logic Import ---
 try:
-    from planning import RoutePlanner
+    from planning import RoutePlanner, StrategicSortiePlanner
 except ImportError:
     print("Warning: planning.py not found. Route optimization features will be disabled.")
     RoutePlanner = None
+    StrategicSortiePlanner = None
 
 
 # --- Gradio UI Definition ---
@@ -301,7 +302,12 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                         info="Optional. If empty, the first selected site is used."
                     )
 
+                    with gr.Row():
+                        mp_num_sorties = gr.Slider(minimum=1, maximum=5, value=1, step=1, label="Number of Sorties (Days)")
+                        mp_speed = gr.Slider(minimum=20, maximum=120, value=60, step=10, label="Avg Speed (km/h)")
+
                     mp_execute_btn = gr.Button("Execute Mission Plan", variant="primary")
+                    mp_download_file = gr.File(label="Download Orders")
 
                 with gr.Column(scale=2):
                     mp_map_output = gr.HTML(label="Tactical Map")
@@ -321,18 +327,18 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         return gr.update(choices=names, value=[]), gr.update(choices=names, value=None)
 
     # --- HELPER: Generate Mission Plan ---
-    def generate_mission_plan(selected_sites, start_site_name, all_sites_df):
-        if not RoutePlanner:
-            return "Error: Planning module not loaded.", "<p>Planning module missing.</p>"
+    def generate_mission_plan(selected_sites, start_site_name, num_sorties, avg_speed, all_sites_df):
+        if not RoutePlanner or not StrategicSortiePlanner:
+            return "Error: Planning module not loaded.", "<p>Planning module missing.</p>", None
 
         if not selected_sites or len(selected_sites) < 2:
-            return "## Mission Aborted\n\nPlease select at least 2 sites to form a route.", ""
+            return "## Mission Aborted\n\nPlease select at least 2 sites to form a route.", "", None
 
         # Filter dataframe for selected sites
         selected_df = all_sites_df[all_sites_df['Site Name'].isin(selected_sites)]
 
         if selected_df.empty:
-            return "## Error\n\nSelected sites not found in database.", ""
+            return "## Error\n\nSelected sites not found in database.", "", None
 
         # Determine start site
         if start_site_name and start_site_name in selected_sites:
@@ -342,42 +348,143 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         start_site_dict = start_row.to_dict()
 
-        # Other sites
-        other_sites = []
+        # Target sites (excluding start if it's just an insertion point, but usually in round trips we visit it)
+        # StrategicSortiePlanner expects target_sites to be the list of sites to visit.
+        # If the start site is one of the targets, it should be in the list?
+        # The logic in StrategicSortiePlanner clusters target_sites. The start_site is the 'base'.
+        # So we should exclude base from target_sites to avoid clustering it, or include it if we want it to be a destination?
+        # Let's exclude base from target_sites passed to planner, as it acts as the hub.
+
+        target_sites = []
         for _, row in selected_df.iterrows():
             if row['Site Name'] != start_site_dict['Site Name']:
-                other_sites.append(row.to_dict())
+                target_sites.append(row.to_dict())
 
-        # Optimize
-        result = RoutePlanner.optimize_route(start_site_dict, other_sites)
-        route = result['route']
-        total_dist = result['total_distance_km']
+        # If no other sites, just return
+        if not target_sites:
+             return "## Error\n\nNo target sites selected (only base selected).", "", None
 
-        # Generate Map
-        map_html = generate_map_html(all_sites_df, route_data=route)
+        planner = StrategicSortiePlanner(start_site_dict, target_sites)
+        sorties = planner.plan_sorties(num_sorties=int(num_sorties), avg_speed_kmh=float(avg_speed))
 
-        # Generate Briefing
-        briefing = f"""
-# 📜 Operational Briefing
+        # --- Generate Map ---
+        # We need a custom map generation for multiple sorties
+        map_html = generate_multi_sortie_map(all_sites_df, sorties, start_site_dict)
 
-**Mission Profile:** Multi-site Heritage Reconnaissance
-**Total Distance:** {total_dist} km
-**Stops:** {len(route)}
+        # --- Generate Briefing ---
+        briefing = f"# 📜 Strategic Operational Briefing\n\n"
+        briefing += f"**Base of Operations:** {start_site_dict['Site Name']}\n"
+        briefing += f"**Total Sorties:** {len(sorties)}\n\n"
 
-### 🗺️ Route Itinerary
-"""
-        for i, site in enumerate(route):
-            briefing += f"{i+1}. **{site['Site Name']}** ({site['Location']})\n"
+        total_mission_dist = 0
+        total_mission_time = 0
 
-        briefing += "\n*End of Briefing*"
+        for sortie in sorties:
+            briefing += f"### 🚁 Sortie #{sortie['id']}\n"
+            briefing += f"- **Distance:** {sortie['distance']} km\n"
+            briefing += f"- **Est. Duration:** {sortie['est_duration_hrs']} hrs\n"
+            briefing += f"- **Targets:** {sortie['site_count']}\n\n"
 
-        return briefing, map_html
+            briefing += "**Itinerary:**\n"
+            for i, site in enumerate(sortie['route']):
+                 briefing += f"{i+1}. {site['Site Name']}\n"
+            briefing += "\n---\n"
+
+            total_mission_dist += sortie['distance']
+            total_mission_time += sortie['est_duration_hrs']
+
+        briefing += f"### 📊 Mission Totals\n"
+        briefing += f"**Total Distance:** {round(total_mission_dist, 2)} km\n"
+        briefing += f"**Total Operational Time:** {round(total_mission_time, 2)} hrs\n"
+
+        # Create a downloadable file content
+        import json
+        import tempfile
+
+        mission_data = {
+            "mission_name": "Heritage Ops Recon",
+            "base": start_site_dict['Site Name'],
+            "sorties": sorties
+        }
+        mission_json = json.dumps(mission_data, indent=4, default=str)
+
+        # Create a temporary file for download
+        # Use NamedTemporaryFile with delete=False so Gradio can read it, then we rely on OS or Gradio to cleanup?
+        # Gradio copies the file usually.
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
+            tmp_file.write(mission_json)
+            mission_file_path = tmp_file.name
+
+        return briefing, map_html, mission_file_path
+
+    def generate_multi_sortie_map(df_map_data, sorties, start_site):
+        # ... (implementation of multi-sortie map) ...
+        # Copied basics from generate_map_html
+        if df_map_data.empty:
+             return "<p>No data</p>"
+
+        try:
+            lat_mean = df_map_data['Latitude'].mean()
+            lon_mean = df_map_data['Longitude'].mean()
+            map_center = [lat_mean, lon_mean]
+        except:
+            map_center = [DEFAULT_LATITUDE, DEFAULT_LONGITUDE]
+
+        site_map = folium.Map(location=map_center, zoom_start=6)
+
+        # Colors for sorties
+        colors = ['blue', 'green', 'purple', 'orange', 'darkred', 'cadetblue']
+
+        # Add Base Marker
+        folium.Marker(
+            location=[float(start_site['Latitude']), float(start_site['Longitude'])],
+            popup=folium.Popup(f"<b>BASE: {start_site['Site Name']}</b>", max_width=300),
+            icon=folium.Icon(color='red', icon='home', prefix='fa')
+        ).add_to(site_map)
+
+        for i, sortie in enumerate(sorties):
+            color = colors[i % len(colors)]
+            points = []
+
+            # Add markers for this sortie
+            for j, site in enumerate(sortie['route']):
+                try:
+                    lat = float(site['Latitude'])
+                    lon = float(site['Longitude'])
+                    points.append([lat, lon])
+
+                    # Don't duplicate Base marker if it appears in route
+                    if site['Site Name'] != start_site['Site Name']:
+                        folium.Marker(
+                            location=[lat, lon],
+                            popup=folium.Popup(f"<b>S{sortie['id']}-#{j+1}: {site['Site Name']}</b>", max_width=300),
+                            icon=folium.Icon(color=color, icon='info-sign', prefix='fa')
+                        ).add_to(site_map)
+                except:
+                    continue
+
+            if len(points) > 1:
+                folium.PolyLine(
+                    locations=points,
+                    color=color,
+                    weight=4,
+                    opacity=0.8,
+                    tooltip=f"Sortie {sortie['id']}"
+                ).add_to(site_map)
+
+        return site_map._repr_html_()
 
     # Connect Mission Planner Events
     mp_execute_btn.click(
         fn=generate_mission_plan,
-        inputs=[mp_site_selector, mp_start_selector, all_sites_df_state],
-        outputs=[mp_briefing_output, mp_map_output]
+        inputs=[
+            mp_site_selector,
+            mp_start_selector,
+            mp_num_sorties,
+            mp_speed,
+            all_sites_df_state
+        ],
+        outputs=[mp_briefing_output, mp_map_output, mp_download_file]
     )
 
 
