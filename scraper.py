@@ -1,84 +1,9 @@
 import os
-import subprocess
 import sys
-import importlib
-import site # Added site module
-
-def install_libraries():
-    """Installs necessary Python libraries and verifies installation."""
-    print("Consider using a Python virtual environment for managing dependencies.")
-    libraries = ["requests", "beautifulsoup4", "pandas", "lxml"]
-    
-    # Validate library names for security
-    import re
-    valid_name_pattern = r'^[a-zA-Z0-9_\-\.]+$'
-    for lib in libraries:
-        if not re.match(valid_name_pattern, lib):
-            print(f"Error: Invalid library name '{lib}'. Skipping for security reasons.")
-            continue
-    
-    all_installed = True
-
-    # Get user site packages path once
-    user_site_dir = site.getusersitepackages()
-    if user_site_dir: # Can be a string or a list of strings
-        if isinstance(user_site_dir, list):
-            user_site_dir = user_site_dir[0] # Take the first one
-        if user_site_dir not in sys.path:
-            print(f"Adding user site packages directory {user_site_dir} to sys.path.")
-            sys.path.append(user_site_dir)
-    else:
-        print("Warning: Could not determine user site packages directory. Pip installs might not be found without shell restart.")
-
-    for lib_name in libraries:
-        module_name = lib_name
-        if lib_name == "beautifulsoup4":
-            module_name = "bs4"
-
-        try:
-            importlib.import_module(module_name)
-            print(f"{lib_name} (as {module_name}) is already installed.")
-        except ImportError:
-            print(f"Attempting to install {lib_name} using pip install --user...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", lib_name])
-                print(f"Successfully ran pip install for {lib_name}.")
-
-                importlib.invalidate_caches() # Invalidate caches before re-import
-
-                importlib.import_module(module_name) # Try importing again
-                print(f"Successfully imported {lib_name} (as {module_name}) after installation.")
-
-            except subprocess.CalledProcessError as e:
-                print(f"Error during 'pip install --user {lib_name}': {e}")
-                output = e.output.decode('utf-8') if e.output and hasattr(e.output, 'decode') else "No output captured"
-                print(f"Pip install output for {lib_name}:\n{output}")
-                print(f"Please try installing {lib_name} manually using 'pip install --user {lib_name}' and restart the script.")
-                all_installed = False
-            except ImportError as ie:
-                print(f"Failed to import {lib_name} (as {module_name}) even after attempting installation.")
-                print(f"ImportError: {ie}")
-                print(f"Current sys.path: {sys.path}")
-                print(f"If you recently installed this package, you might need to restart the script or your environment.")
-                all_installed = False
-            except Exception as ex:
-                print(f"An unexpected error occurred during the installation or import of {lib_name}: {ex}")
-                all_installed = False
-
-    if not all_installed:
-        print("\nOne or more essential libraries could not be installed or imported correctly.")
-        print("Please review the error messages above and ensure the libraries are installed in a location accessible by Python.")
-        sys.exit(1)
-
-# Call install_libraries at the beginning of the script execution
-install_libraries()
-
-# Import necessary libraries after installation check
-import argparse # Added for command-line arguments
+import argparse
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-# sys is already imported at the top
 
 def scrape_unesco_sites(country_name):
     """
