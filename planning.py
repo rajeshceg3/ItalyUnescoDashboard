@@ -1,5 +1,10 @@
 import math
 import numpy as np
+try:
+    from tactical import TacticalRouter
+except ImportError:
+    # If tactical.py is not available/run independently
+    TacticalRouter = None
 
 class RoutePlanner:
     """
@@ -34,7 +39,7 @@ class RoutePlanner:
         return c * r
 
     @staticmethod
-    def optimize_route(start_site, other_sites, return_to_start=False):
+    def optimize_route(start_site, other_sites, return_to_start=False, threats=None):
         """
         Optimizes the route to visit all sites using a Nearest Neighbor algorithm.
 
@@ -42,15 +47,17 @@ class RoutePlanner:
             start_site (dict): The starting site dictionary.
             other_sites (list): List of other site dictionaries to visit.
             return_to_start (bool): If True, adds the start site as the final destination.
+            threats (list): Optional list of ThreatZone objects.
 
         Returns:
             dict: {
                 'route': list of site dictionaries in order,
-                'total_distance_km': float
+                'total_distance_km': float,
+                'detailed_path': list of (lat, lon) tuples (including waypoints)
             }
         """
         if not other_sites:
-            return {'route': [start_site], 'total_distance_km': 0}
+            return {'route': [start_site], 'total_distance_km': 0, 'detailed_path': []}
 
         # Initialize
         current_site = start_site
@@ -58,24 +65,40 @@ class RoutePlanner:
         unvisited = other_sites[:]
         total_distance = 0.0
 
+        # We also want to track the *detailed* path (with evasion waypoints)
+        detailed_path = [(float(start_site['Latitude']), float(start_site['Longitude']))]
+
         while unvisited:
             nearest_site = None
             min_dist = float('inf')
+            best_segment_path = None
 
             current_coords = (float(current_site['Latitude']), float(current_site['Longitude']))
 
             for site in unvisited:
                 site_coords = (float(site['Latitude']), float(site['Longitude']))
-                dist = RoutePlanner.haversine_distance(current_coords, site_coords)
+
+                # If threats exist, use tactical routing
+                if threats and TacticalRouter:
+                    path_seg, dist = TacticalRouter.compute_safe_route(current_coords, site_coords, threats)
+                else:
+                    dist = RoutePlanner.haversine_distance(current_coords, site_coords)
+                    path_seg = [current_coords, site_coords]
 
                 if dist < min_dist:
                     min_dist = dist
                     nearest_site = site
+                    best_segment_path = path_seg
 
             # Move to nearest site
             if nearest_site:
                 route.append(nearest_site)
                 total_distance += min_dist
+
+                # Append path segments (excluding start which is already in detailed_path)
+                if best_segment_path:
+                    detailed_path.extend(best_segment_path[1:])
+
                 current_site = nearest_site
                 unvisited.remove(nearest_site)
 
@@ -83,13 +106,23 @@ class RoutePlanner:
             # Add distance back to start
             last_coords = (float(current_site['Latitude']), float(current_site['Longitude']))
             start_coords = (float(start_site['Latitude']), float(start_site['Longitude']))
-            dist = RoutePlanner.haversine_distance(last_coords, start_coords)
+
+            if threats and TacticalRouter:
+                path_seg, dist = TacticalRouter.compute_safe_route(last_coords, start_coords, threats)
+            else:
+                dist = RoutePlanner.haversine_distance(last_coords, start_coords)
+                path_seg = [last_coords, start_coords]
+
             total_distance += dist
+            if path_seg:
+                detailed_path.extend(path_seg[1:])
+
             route.append(start_site)
 
         return {
             'route': route,
-            'total_distance_km': round(total_distance, 2)
+            'total_distance_km': round(total_distance, 2),
+            'detailed_path': detailed_path
         }
 
 class NumpyKMeans:
@@ -140,13 +173,14 @@ class StrategicSortiePlanner:
         self.base_site = base_site
         self.target_sites = target_sites # List of dicts
 
-    def plan_sorties(self, num_sorties=1, avg_speed_kmh=60):
+    def plan_sorties(self, num_sorties=1, avg_speed_kmh=60, threats=None):
         """
         Generates a mission plan with 'num_sorties' sorties.
 
         Args:
             num_sorties (int): Number of sorties (clusters) to split the targets into.
             avg_speed_kmh (float): Average operational speed in km/h.
+            threats (list): Optional list of ThreatZone objects.
 
         Returns:
             list of dicts, where each dict is a sortie plan:
@@ -154,7 +188,8 @@ class StrategicSortiePlanner:
                 'id': int,
                 'route': list of sites,
                 'distance': float,
-                'est_duration_hrs': float
+                'est_duration_hrs': float,
+                'detailed_path': list of tuples
             }
         """
         if not self.target_sites:
@@ -162,14 +197,10 @@ class StrategicSortiePlanner:
 
         # If only 1 sortie, just run standard optimization (Round Trip)
         if num_sorties == 1:
-            raw_route = RoutePlanner.optimize_route(self.base_site, self.target_sites, return_to_start=True)
+            raw_route = RoutePlanner.optimize_route(self.base_site, self.target_sites, return_to_start=True, threats=threats)
             dist = raw_route['total_distance_km']
             # Estimate time: Driving + 2 hours per site
-            # Note: This is a rough estimation.
             transit_time = dist / avg_speed_kmh
-            # Excluding start/end base visits from "site time" if it appears twice?
-            # Route has N+2 nodes (Start, S1...Sn, Start). Unique sites visited = N.
-            # Let's assume 2 hours per target site.
             unique_targets = len(self.target_sites)
             mission_time = transit_time + (unique_targets * 2.0)
 
@@ -178,7 +209,8 @@ class StrategicSortiePlanner:
                 'route': raw_route['route'],
                 'distance': dist,
                 'est_duration_hrs': round(mission_time, 2),
-                'site_count': unique_targets
+                'site_count': unique_targets,
+                'detailed_path': raw_route.get('detailed_path', [])
             }]
 
         # Prepare data for clustering
@@ -199,7 +231,7 @@ class StrategicSortiePlanner:
             cluster_sites = [self.target_sites[idx] for idx in cluster_indices]
 
             # Optimize route for this cluster (Round Trip from Base)
-            route_result = RoutePlanner.optimize_route(self.base_site, cluster_sites, return_to_start=True)
+            route_result = RoutePlanner.optimize_route(self.base_site, cluster_sites, return_to_start=True, threats=threats)
 
             dist = route_result['total_distance_km']
             transit_time = dist / avg_speed_kmh
@@ -210,7 +242,8 @@ class StrategicSortiePlanner:
                 'route': route_result['route'],
                 'distance': dist,
                 'est_duration_hrs': round(mission_time, 2),
-                'site_count': len(cluster_sites)
+                'site_count': len(cluster_sites),
+                'detailed_path': route_result.get('detailed_path', [])
             })
 
         return sorties

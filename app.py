@@ -234,10 +234,12 @@ def generate_map_html(df_map_data, route_data=None):
 # --- Planning Logic Import ---
 try:
     from planning import RoutePlanner, StrategicSortiePlanner
+    from tactical import ThreatZone
 except ImportError:
-    print("Warning: planning.py not found. Route optimization features will be disabled.")
+    print("Warning: planning.py or tactical.py not found. Route optimization features will be disabled.")
     RoutePlanner = None
     StrategicSortiePlanner = None
+    ThreatZone = None
 
 
 # --- Gradio UI Definition ---
@@ -245,6 +247,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
     # --- State Variables ---
     all_sites_df_state = gr.State(initial_df)
     filtered_sites_df_state = gr.State(initial_df.copy())
+    threats_state = gr.State([]) # List of ThreatZone objects
 
     # --- Header ---
     main_title_md = gr.Markdown("# Italy UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic")
@@ -284,6 +287,18 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
             gr.Markdown("## Heritage Ops: Tactical Site Reconnaissance & Route Planning")
             gr.Markdown("Select a squad of sites to visit and generate an optimized tactical route.")
 
+            with gr.Accordion("⚠️ Tactical Intel & Threat Assessment", open=False):
+                with gr.Row():
+                    with gr.Column():
+                        threat_lat = gr.Number(label="Latitude", value=42.0)
+                        threat_lon = gr.Number(label="Longitude", value=12.5)
+                        threat_rad = gr.Slider(minimum=1, maximum=100, value=20, label="Radius (km)")
+                        threat_name = gr.Textbox(label="Threat ID", value="Hostile Area")
+                        add_threat_btn = gr.Button("Add Threat Zone")
+                    with gr.Column():
+                        threat_list_display = gr.JSON(label="Active Threats", value=[])
+                        clear_threats_btn = gr.Button("Clear All Threats", variant="stop")
+
             with gr.Row():
                 with gr.Column(scale=1):
                     # Initial choices from Italy (default)
@@ -313,6 +328,9 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                     mp_map_output = gr.HTML(label="Tactical Map")
 
             with gr.Row():
+                 mp_sim_slider = gr.Slider(minimum=0, maximum=100, value=0, label="Mission Simulation Progress (%)", interactive=True)
+
+            with gr.Row():
                 mp_briefing_output = gr.Markdown(label="Operational Briefing")
 
     # --- HELPER: Update Mission Planner Choices ---
@@ -326,8 +344,30 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         return gr.update(choices=names, value=[]), gr.update(choices=names, value=None)
 
+    # --- HELPER: Threat Management ---
+    def add_threat(lat, lon, rad, name, current_threats):
+        if ThreatZone:
+            new_threat = ThreatZone(lat, lon, rad, name)
+            current_threats.append(new_threat)
+        return [t.to_dict() for t in current_threats], current_threats
+
+    def clear_threats():
+        return [], []
+
+    add_threat_btn.click(
+        fn=add_threat,
+        inputs=[threat_lat, threat_lon, threat_rad, threat_name, threats_state],
+        outputs=[threat_list_display, threats_state]
+    )
+
+    clear_threats_btn.click(
+        fn=clear_threats,
+        inputs=[],
+        outputs=[threat_list_display, threats_state]
+    )
+
     # --- HELPER: Generate Mission Plan ---
-    def generate_mission_plan(selected_sites, start_site_name, num_sorties, avg_speed, all_sites_df):
+    def generate_mission_plan(selected_sites, start_site_name, num_sorties, avg_speed, all_sites_df, threats):
         if not RoutePlanner or not StrategicSortiePlanner:
             return "Error: Planning module not loaded.", "<p>Planning module missing.</p>", None
 
@@ -348,13 +388,6 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         start_site_dict = start_row.to_dict()
 
-        # Target sites (excluding start if it's just an insertion point, but usually in round trips we visit it)
-        # StrategicSortiePlanner expects target_sites to be the list of sites to visit.
-        # If the start site is one of the targets, it should be in the list?
-        # The logic in StrategicSortiePlanner clusters target_sites. The start_site is the 'base'.
-        # So we should exclude base from target_sites to avoid clustering it, or include it if we want it to be a destination?
-        # Let's exclude base from target_sites passed to planner, as it acts as the hub.
-
         target_sites = []
         for _, row in selected_df.iterrows():
             if row['Site Name'] != start_site_dict['Site Name']:
@@ -365,16 +398,20 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
              return "## Error\n\nNo target sites selected (only base selected).", "", None
 
         planner = StrategicSortiePlanner(start_site_dict, target_sites)
-        sorties = planner.plan_sorties(num_sorties=int(num_sorties), avg_speed_kmh=float(avg_speed))
+
+        # Pass threats to planner
+        sorties = planner.plan_sorties(num_sorties=int(num_sorties), avg_speed_kmh=float(avg_speed), threats=threats)
 
         # --- Generate Map ---
         # We need a custom map generation for multiple sorties
-        map_html = generate_multi_sortie_map(all_sites_df, sorties, start_site_dict)
+        map_html = generate_multi_sortie_map(all_sites_df, sorties, start_site_dict, threats)
 
         # --- Generate Briefing ---
         briefing = f"# 📜 Strategic Operational Briefing\n\n"
         briefing += f"**Base of Operations:** {start_site_dict['Site Name']}\n"
         briefing += f"**Total Sorties:** {len(sorties)}\n\n"
+        if threats:
+            briefing += f"**⚠️ Active Threat Zones:** {len(threats)}\n\n"
 
         total_mission_dist = 0
         total_mission_time = 0
@@ -404,22 +441,18 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         mission_data = {
             "mission_name": "Heritage Ops Recon",
             "base": start_site_dict['Site Name'],
-            "sorties": sorties
+            "sorties": [{k:v for k,v in s.items() if k != 'detailed_path'} for s in sorties], # Exclude huge path data
+            "threats": [t.to_dict() for t in threats] if threats else []
         }
         mission_json = json.dumps(mission_data, indent=4, default=str)
 
-        # Create a temporary file for download
-        # Use NamedTemporaryFile with delete=False so Gradio can read it, then we rely on OS or Gradio to cleanup?
-        # Gradio copies the file usually.
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as tmp_file:
             tmp_file.write(mission_json)
             mission_file_path = tmp_file.name
 
         return briefing, map_html, mission_file_path
 
-    def generate_multi_sortie_map(df_map_data, sorties, start_site):
-        # ... (implementation of multi-sortie map) ...
-        # Copied basics from generate_map_html
+    def generate_multi_sortie_map(df_map_data, sorties, start_site, threats=None):
         if df_map_data.empty:
              return "<p>No data</p>"
 
@@ -431,6 +464,18 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
             map_center = [DEFAULT_LATITUDE, DEFAULT_LONGITUDE]
 
         site_map = folium.Map(location=map_center, zoom_start=6)
+
+        # Draw Threats
+        if threats:
+            for threat in threats:
+                folium.Circle(
+                    location=[threat.lat, threat.lon],
+                    radius=threat.radius_km * 1000, # Meters
+                    color='red',
+                    fill=True,
+                    fill_opacity=0.3,
+                    popup=f"THREAT: {threat.name}"
+                ).add_to(site_map)
 
         # Colors for sorties
         colors = ['blue', 'green', 'purple', 'orange', 'darkred', 'cadetblue']
@@ -444,16 +489,31 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         for i, sortie in enumerate(sorties):
             color = colors[i % len(colors)]
-            points = []
 
-            # Add markers for this sortie
+            # Draw Detailed Path if available, else fallback to site points
+            detailed_path = sortie.get('detailed_path', [])
+            if detailed_path and len(detailed_path) > 1:
+                folium.PolyLine(
+                    locations=detailed_path,
+                    color=color,
+                    weight=4,
+                    opacity=0.8,
+                    tooltip=f"Sortie {sortie['id']} Path"
+                ).add_to(site_map)
+            else:
+                # Fallback
+                points = []
+                for site in sortie['route']:
+                     points.append([float(site['Latitude']), float(site['Longitude'])])
+                if len(points) > 1:
+                     folium.PolyLine(locations=points, color=color, weight=4).add_to(site_map)
+
+            # Add markers for sites
             for j, site in enumerate(sortie['route']):
                 try:
                     lat = float(site['Latitude'])
                     lon = float(site['Longitude'])
-                    points.append([lat, lon])
 
-                    # Don't duplicate Base marker if it appears in route
                     if site['Site Name'] != start_site['Site Name']:
                         folium.Marker(
                             location=[lat, lon],
@@ -463,16 +523,14 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                 except:
                     continue
 
-            if len(points) > 1:
-                folium.PolyLine(
-                    locations=points,
-                    color=color,
-                    weight=4,
-                    opacity=0.8,
-                    tooltip=f"Sortie {sortie['id']}"
-                ).add_to(site_map)
-
         return site_map._repr_html_()
+
+    # --- Simulation Logic (Placeholder/Basic) ---
+    def simulate_mission(progress):
+        # This would require re-generating the map with a marker at the interpolated position.
+        # Since we can't easily persist the 'sorties' object in Gradio without re-running planning,
+        # we will skip complex simulation for now unless we store 'last_mission_sorties' in a State.
+        return gr.update() # No-op for now
 
     # Connect Mission Planner Events
     mp_execute_btn.click(
@@ -482,7 +540,8 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
             mp_start_selector,
             mp_num_sorties,
             mp_speed,
-            all_sites_df_state
+            all_sites_df_state,
+            threats_state
         ],
         outputs=[mp_briefing_output, mp_map_output, mp_download_file]
     )
