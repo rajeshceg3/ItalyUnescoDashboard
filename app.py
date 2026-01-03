@@ -164,7 +164,7 @@ def generate_map_html(df_map_data, route_data=None):
         print(f"Error calculating map center: {e}")
         map_center = [DEFAULT_LATITUDE, DEFAULT_LONGITUDE]
 
-    site_map = folium.Map(location=map_center, zoom_start=5)
+    site_map = folium.Map(location=map_center, zoom_start=5, tiles='CartoDB positron')
 
     # Draw Route if available
     if route_data:
@@ -244,6 +244,11 @@ except ImportError:
 
 # --- Gradio UI Definition ---
 with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as app:
+    # --- Fonts & Global Styles ---
+    gr.HTML("""
+        <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+    """)
+
     # --- State Variables ---
     all_sites_df_state = gr.State(initial_df)
     filtered_sites_df_state = gr.State(initial_df.copy())
@@ -463,7 +468,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         except:
             map_center = [DEFAULT_LATITUDE, DEFAULT_LONGITUDE]
 
-        site_map = folium.Map(location=map_center, zoom_start=6)
+        site_map = folium.Map(location=map_center, zoom_start=6, tiles='CartoDB positron')
 
         # Draw Threats
         if threats:
