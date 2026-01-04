@@ -161,11 +161,13 @@ def generate_map_html(df_map_data, route_data=None):
 try:
     from planning import RoutePlanner, StrategicSortiePlanner
     from tactical import ThreatZone
+    from assets import ASSET_REGISTRY
 except ImportError:
-    print("Warning: planning.py or tactical.py not found. Route optimization features will be disabled.")
+    print("Warning: planning.py, tactical.py or assets.py not found. Route optimization features will be disabled.")
     RoutePlanner = None
     StrategicSortiePlanner = None
     ThreatZone = None
+    ASSET_REGISTRY = {}
 
 
 # --- Gradio UI Definition ---
@@ -250,7 +252,13 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
                     with gr.Row():
                         mp_num_sorties = gr.Slider(minimum=1, maximum=5, value=1, step=1, label="Number of Sorties (Days)")
-                        mp_speed = gr.Slider(minimum=20, maximum=120, value=60, step=10, label="Avg Speed (km/h)")
+                        # Replaced Speed Slider with Asset Selector
+                        mp_asset_selector = gr.Dropdown(
+                            choices=list(ASSET_REGISTRY.keys()),
+                            value=list(ASSET_REGISTRY.keys())[1], # Default to Ground Vehicle
+                            label="Select Deployment Asset",
+                            info="Determines speed, range, and stealth capabilities."
+                        )
 
                     mp_execute_btn = gr.Button("Execute Mission Plan", variant="primary")
                     mp_download_file = gr.File(label="Download Orders")
@@ -298,7 +306,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
     )
 
     # --- HELPER: Generate Mission Plan ---
-    def generate_mission_plan(selected_sites, start_site_name, num_sorties, avg_speed, all_sites_df, threats):
+    def generate_mission_plan(selected_sites, start_site_name, num_sorties, selected_asset_name, all_sites_df, threats):
         if not RoutePlanner or not StrategicSortiePlanner:
             return "Error: Planning module not loaded.", "<p>Planning module missing.</p>", None
 
@@ -328,10 +336,15 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         if not target_sites:
              return "## Error\n\nNo target sites selected (only base selected).", "", None
 
+        # Resolve Asset
+        asset = ASSET_REGISTRY.get(selected_asset_name)
+        if not asset:
+            return "## Error\n\nInvalid asset selected.", "", None
+
         planner = StrategicSortiePlanner(start_site_dict, target_sites)
 
-        # Pass threats to planner
-        sorties = planner.plan_sorties(num_sorties=int(num_sorties), avg_speed_kmh=float(avg_speed), threats=threats)
+        # Pass threats and asset to planner
+        sorties = planner.plan_sorties(num_sorties=int(num_sorties), asset=asset, threats=threats)
 
         # --- Generate Map ---
         # We need a custom map generation for multiple sorties
@@ -340,17 +353,24 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         # --- Generate Briefing ---
         briefing = f"# 📜 Strategic Operational Briefing\n\n"
         briefing += f"**Base of Operations:** {start_site_dict['Site Name']}\n"
+        briefing += f"**Asset:** {asset.name} (Stealth: {asset.stealth_factor}, Range: {asset.max_range_km}km)\n"
         briefing += f"**Total Sorties:** {len(sorties)}\n\n"
+
         if threats:
             briefing += f"**⚠️ Active Threat Zones:** {len(threats)}\n\n"
 
         total_mission_dist = 0
         total_mission_time = 0
+        total_fuel = 0
 
         for sortie in sorties:
-            briefing += f"### 🚁 Sortie #{sortie['id']}\n"
+            status_icon = "🟢" if sortie['status'] == "GREEN" else "🔴"
+
+            briefing += f"### {status_icon} Sortie #{sortie['id']} - {sortie['status_msg']}\n"
             briefing += f"- **Distance:** {sortie['distance']} km\n"
             briefing += f"- **Est. Duration:** {sortie['est_duration_hrs']} hrs\n"
+            briefing += f"- **Fuel Est:** {sortie['fuel_used']} units\n"
+            briefing += f"- **Risk Score:** {sortie['risk_score']}\n"
             briefing += f"- **Targets:** {sortie['site_count']}\n\n"
 
             briefing += "**Itinerary:**\n"
@@ -360,9 +380,11 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
             total_mission_dist += sortie['distance']
             total_mission_time += sortie['est_duration_hrs']
+            total_fuel += sortie['fuel_used']
 
         briefing += f"### 📊 Mission Totals\n"
         briefing += f"**Total Distance:** {round(total_mission_dist, 2)} km\n"
+        briefing += f"**Total Fuel Required:** {round(total_fuel, 1)} units\n"
         briefing += f"**Total Operational Time:** {round(total_mission_time, 2)} hrs\n"
 
         # Create a downloadable file content
@@ -372,6 +394,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         mission_data = {
             "mission_name": "Heritage Ops Recon",
             "base": start_site_dict['Site Name'],
+            "asset": asset.to_dict(),
             "sorties": [{k:v for k,v in s.items() if k != 'detailed_path'} for s in sorties], # Exclude huge path data
             "threats": [t.to_dict() for t in threats] if threats else []
         }
@@ -399,13 +422,25 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         # Draw Threats
         if threats:
             for threat in threats:
+                # Add a heatmap style circle for risk intensity
                 folium.Circle(
                     location=[threat.lat, threat.lon],
                     radius=threat.radius_km * 1000, # Meters
                     color='red',
+                    weight=1,
                     fill=True,
-                    fill_opacity=0.3,
+                    fill_opacity=0.2,
                     popup=f"THREAT: {threat.name}"
+                ).add_to(site_map)
+
+                # Inner core
+                folium.Circle(
+                    location=[threat.lat, threat.lon],
+                    radius=threat.radius_km * 1000 * 0.5,
+                    color='darkred',
+                    weight=0,
+                    fill=True,
+                    fill_opacity=0.4,
                 ).add_to(site_map)
 
         # Colors for sorties
@@ -420,6 +455,8 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         for i, sortie in enumerate(sorties):
             color = colors[i % len(colors)]
+            if sortie['status'] == 'RED':
+                color = 'gray' # Dim the invalid routes
 
             # Draw Detailed Path if available, else fallback to site points
             detailed_path = sortie.get('detailed_path', [])
@@ -429,7 +466,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                     color=color,
                     weight=4,
                     opacity=0.8,
-                    tooltip=f"Sortie {sortie['id']} Path"
+                    tooltip=f"Sortie {sortie['id']} Path ({sortie['status']})"
                 ).add_to(site_map)
             else:
                 # Fallback
@@ -470,7 +507,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
             mp_site_selector,
             mp_start_selector,
             mp_num_sorties,
-            mp_speed,
+            mp_asset_selector,
             all_sites_df_state,
             threats_state
         ],

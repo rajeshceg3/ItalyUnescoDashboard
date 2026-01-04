@@ -6,6 +6,8 @@ except ImportError:
     # If tactical.py is not available/run independently
     TacticalRouter = None
 
+from assets import Asset
+
 class RoutePlanner:
     """
     Handles the calculation of optimal routes between multiple geographic locations.
@@ -39,7 +41,7 @@ class RoutePlanner:
         return c * r
 
     @staticmethod
-    def optimize_route(start_site, other_sites, return_to_start=False, threats=None):
+    def optimize_route(start_site, other_sites, return_to_start=False, threats=None, asset=None):
         """
         Optimizes the route to visit all sites using a Nearest Neighbor algorithm.
 
@@ -48,16 +50,18 @@ class RoutePlanner:
             other_sites (list): List of other site dictionaries to visit.
             return_to_start (bool): If True, adds the start site as the final destination.
             threats (list): Optional list of ThreatZone objects.
+            asset (Asset): Optional asset object for stealth routing.
 
         Returns:
             dict: {
                 'route': list of site dictionaries in order,
                 'total_distance_km': float,
-                'detailed_path': list of (lat, lon) tuples (including waypoints)
+                'detailed_path': list of (lat, lon) tuples (including waypoints),
+                'risk_score': float
             }
         """
         if not other_sites:
-            return {'route': [start_site], 'total_distance_km': 0, 'detailed_path': []}
+            return {'route': [start_site], 'total_distance_km': 0, 'detailed_path': [], 'risk_score': 0.0}
 
         # Initialize
         current_site = start_site
@@ -80,7 +84,7 @@ class RoutePlanner:
 
                 # If threats exist, use tactical routing
                 if threats and TacticalRouter:
-                    path_seg, dist = TacticalRouter.compute_safe_route(current_coords, site_coords, threats)
+                    path_seg, dist = TacticalRouter.compute_safe_route(current_coords, site_coords, threats, asset=asset)
                 else:
                     dist = RoutePlanner.haversine_distance(current_coords, site_coords)
                     path_seg = [current_coords, site_coords]
@@ -108,7 +112,7 @@ class RoutePlanner:
             start_coords = (float(start_site['Latitude']), float(start_site['Longitude']))
 
             if threats and TacticalRouter:
-                path_seg, dist = TacticalRouter.compute_safe_route(last_coords, start_coords, threats)
+                path_seg, dist = TacticalRouter.compute_safe_route(last_coords, start_coords, threats, asset=asset)
             else:
                 dist = RoutePlanner.haversine_distance(last_coords, start_coords)
                 path_seg = [last_coords, start_coords]
@@ -119,10 +123,16 @@ class RoutePlanner:
 
             route.append(start_site)
 
+        # Calculate Risk Score
+        risk_score = 0.0
+        if threats and TacticalRouter:
+            risk_score = TacticalRouter.analyze_route_risk(detailed_path, threats)
+
         return {
             'route': route,
             'total_distance_km': round(total_distance, 2),
-            'detailed_path': detailed_path
+            'detailed_path': detailed_path,
+            'risk_score': risk_score
         }
 
 class NumpyKMeans:
@@ -173,13 +183,13 @@ class StrategicSortiePlanner:
         self.base_site = base_site
         self.target_sites = target_sites # List of dicts
 
-    def plan_sorties(self, num_sorties=1, avg_speed_kmh=60, threats=None):
+    def plan_sorties(self, num_sorties=1, asset=None, threats=None):
         """
         Generates a mission plan with 'num_sorties' sorties.
 
         Args:
             num_sorties (int): Number of sorties (clusters) to split the targets into.
-            avg_speed_kmh (float): Average operational speed in km/h.
+            asset (Asset): The asset being used (defines speed, range, stealth).
             threats (list): Optional list of ThreatZone objects.
 
         Returns:
@@ -195,14 +205,24 @@ class StrategicSortiePlanner:
         if not self.target_sites:
             return []
 
+        avg_speed_kmh = asset.speed_kmh if asset else 60.0
+
         # If only 1 sortie, just run standard optimization (Round Trip)
         if num_sorties == 1:
-            raw_route = RoutePlanner.optimize_route(self.base_site, self.target_sites, return_to_start=True, threats=threats)
+            raw_route = RoutePlanner.optimize_route(self.base_site, self.target_sites, return_to_start=True, threats=threats, asset=asset)
             dist = raw_route['total_distance_km']
             # Estimate time: Driving + 2 hours per site
             transit_time = dist / avg_speed_kmh
             unique_targets = len(self.target_sites)
             mission_time = transit_time + (unique_targets * 2.0)
+
+            fuel_used = dist / asset.fuel_efficiency if asset else 0
+
+            status = "GREEN"
+            status_msg = "Mission Feasible"
+            if asset and dist > asset.max_range_km:
+                status = "RED"
+                status_msg = f"CRITICAL: Exceeds Max Range ({asset.max_range_km} km)"
 
             return [{
                 'id': 1,
@@ -210,7 +230,11 @@ class StrategicSortiePlanner:
                 'distance': dist,
                 'est_duration_hrs': round(mission_time, 2),
                 'site_count': unique_targets,
-                'detailed_path': raw_route.get('detailed_path', [])
+                'detailed_path': raw_route.get('detailed_path', []),
+                'risk_score': raw_route.get('risk_score', 0.0),
+                'fuel_used': round(fuel_used, 1),
+                'status': status,
+                'status_msg': status_msg
             }]
 
         # Prepare data for clustering
@@ -231,11 +255,19 @@ class StrategicSortiePlanner:
             cluster_sites = [self.target_sites[idx] for idx in cluster_indices]
 
             # Optimize route for this cluster (Round Trip from Base)
-            route_result = RoutePlanner.optimize_route(self.base_site, cluster_sites, return_to_start=True, threats=threats)
+            route_result = RoutePlanner.optimize_route(self.base_site, cluster_sites, return_to_start=True, threats=threats, asset=asset)
 
             dist = route_result['total_distance_km']
             transit_time = dist / avg_speed_kmh
             mission_time = transit_time + (len(cluster_sites) * 2.0)
+
+            fuel_used = dist / asset.fuel_efficiency if asset else 0
+
+            status = "GREEN"
+            status_msg = "Mission Feasible"
+            if asset and dist > asset.max_range_km:
+                status = "RED"
+                status_msg = f"CRITICAL: Exceeds Max Range ({asset.max_range_km} km)"
 
             sorties.append({
                 'id': i + 1,
@@ -243,7 +275,11 @@ class StrategicSortiePlanner:
                 'distance': dist,
                 'est_duration_hrs': round(mission_time, 2),
                 'site_count': len(cluster_sites),
-                'detailed_path': route_result.get('detailed_path', [])
+                'detailed_path': route_result.get('detailed_path', []),
+                'risk_score': route_result.get('risk_score', 0.0),
+                'fuel_used': round(fuel_used, 1),
+                'status': status,
+                'status_msg': status_msg
             })
 
         return sorties
