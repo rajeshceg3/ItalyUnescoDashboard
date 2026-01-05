@@ -5,6 +5,8 @@ import pandas as pd
 import gradio as gr
 from flask import Flask, jsonify
 import folium
+import json
+import tempfile
 
 # --- Flask App Initialization ---
 app_flask = Flask(__name__)
@@ -159,7 +161,7 @@ def generate_map_html(df_map_data, route_data=None):
 
 # --- Planning Logic Import ---
 try:
-    from planning import RoutePlanner, StrategicSortiePlanner
+    from planning import RoutePlanner, StrategicSortiePlanner, MissionSimulator
     from tactical import ThreatZone
     from assets import ASSET_REGISTRY
 except ImportError:
@@ -168,9 +170,13 @@ except ImportError:
     StrategicSortiePlanner = None
     ThreatZone = None
     ASSET_REGISTRY = {}
+    MissionSimulator = None
 
 
 # --- Gradio UI Definition ---
+# Note: In Gradio 6.0+, 'css' and 'title' moved to app.launch(), but 'title' still often works in Blocks.
+# We will assume modern usage where we pass custom_css to Blocks if supported, or via launch.
+# However, standard practice is still Blocks(css=...) in many versions.
 with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as app:
     # --- Fonts & Global Styles ---
     gr.HTML("""
@@ -181,6 +187,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
     all_sites_df_state = gr.State(initial_df)
     filtered_sites_df_state = gr.State(initial_df.copy())
     threats_state = gr.State([]) # List of ThreatZone objects
+    mission_sorties_state = gr.State([]) # Store planned sorties for simulation
 
     # --- Header ---
     main_title_md = gr.Markdown("# Italy UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic")
@@ -250,15 +257,14 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                         info="Optional. If empty, the first selected site is used."
                     )
 
+                    gr.Markdown("### Fleet Composition")
                     with gr.Row():
-                        mp_num_sorties = gr.Slider(minimum=1, maximum=5, value=1, step=1, label="Number of Sorties (Days)")
-                        # Replaced Speed Slider with Asset Selector
-                        mp_asset_selector = gr.Dropdown(
-                            choices=list(ASSET_REGISTRY.keys()),
-                            value=list(ASSET_REGISTRY.keys())[1], # Default to Ground Vehicle
-                            label="Select Deployment Asset",
-                            info="Determines speed, range, and stealth capabilities."
-                        )
+                         # Dynamic fleet composition
+                         # For simplicity, we create specific inputs for each asset type count
+                         fleet_uav_count = gr.Number(label="UAV (Drone)", value=1, precision=0, minimum=0)
+                         fleet_suv_count = gr.Number(label="SUV (Ground)", value=0, precision=0, minimum=0)
+                         fleet_helo_count = gr.Number(label="Helo (Air)", value=0, precision=0, minimum=0)
+                         fleet_sedan_count = gr.Number(label="Sedan (Covert)", value=0, precision=0, minimum=0)
 
                     mp_execute_btn = gr.Button("Execute Mission Plan", variant="primary")
                     mp_download_file = gr.File(label="Download Orders")
@@ -268,6 +274,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
             with gr.Row():
                  mp_sim_slider = gr.Slider(minimum=0, maximum=100, value=0, label="Mission Simulation Progress (%)", interactive=True)
+                 mp_telemetry_output = gr.JSON(label="Live Telemetry", value={"status": "Standby"}, elem_id="mp_telemetry_output")
 
             with gr.Row():
                 mp_briefing_output = gr.Markdown(label="Operational Briefing")
@@ -306,18 +313,34 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
     )
 
     # --- HELPER: Generate Mission Plan ---
-    def generate_mission_plan(selected_sites, start_site_name, num_sorties, selected_asset_name, all_sites_df, threats):
+    def generate_mission_plan(selected_sites, start_site_name, n_uav, n_suv, n_helo, n_sedan, all_sites_df, threats):
         if not RoutePlanner or not StrategicSortiePlanner:
-            return "Error: Planning module not loaded.", "<p>Planning module missing.</p>", None
+            return "Error: Planning module not loaded.", "<p>Planning module missing.</p>", None, []
 
         if not selected_sites or len(selected_sites) < 2:
-            return "## Mission Aborted\n\nPlease select at least 2 sites to form a route.", "", None
+            return "## Mission Aborted\n\nPlease select at least 2 sites to form a route.", "", None, []
+
+        # Construct Fleet safely
+        fleet = []
+        try:
+            for _ in range(int(n_uav)): fleet.append(ASSET_REGISTRY.get("Drone (UAV)"))
+            for _ in range(int(n_suv)): fleet.append(ASSET_REGISTRY.get("Ground Team (SUV)"))
+            for _ in range(int(n_helo)): fleet.append(ASSET_REGISTRY.get("Air Support (Helo)"))
+            for _ in range(int(n_sedan)): fleet.append(ASSET_REGISTRY.get("Covert Ops (Sedan)"))
+        except Exception:
+            pass # Handle safely if int conversion fails or None is fetched
+
+        # Remove None values if ASSET_REGISTRY lookup failed
+        fleet = [f for f in fleet if f is not None]
+
+        if not fleet:
+             return "## Mission Aborted\n\nPlease allocate at least one valid asset to the fleet.", "", None, []
 
         # Filter dataframe for selected sites
         selected_df = all_sites_df[all_sites_df['Site Name'].isin(selected_sites)]
 
         if selected_df.empty:
-            return "## Error\n\nSelected sites not found in database.", "", None
+            return "## Error\n\nSelected sites not found in database.", "", None, []
 
         # Determine start site
         if start_site_name and start_site_name in selected_sites:
@@ -334,27 +357,21 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         # If no other sites, just return
         if not target_sites:
-             return "## Error\n\nNo target sites selected (only base selected).", "", None
-
-        # Resolve Asset
-        asset = ASSET_REGISTRY.get(selected_asset_name)
-        if not asset:
-            return "## Error\n\nInvalid asset selected.", "", None
+             return "## Error\n\nNo target sites selected (only base selected).", "", None, []
 
         planner = StrategicSortiePlanner(start_site_dict, target_sites)
 
-        # Pass threats and asset to planner
-        sorties = planner.plan_sorties(num_sorties=int(num_sorties), asset=asset, threats=threats)
+        # Use the new fleet mission planner
+        sorties = planner.plan_fleet_mission(fleet=fleet, threats=threats)
 
         # --- Generate Map ---
-        # We need a custom map generation for multiple sorties
         map_html = generate_multi_sortie_map(all_sites_df, sorties, start_site_dict, threats)
 
         # --- Generate Briefing ---
         briefing = f"# 📜 Strategic Operational Briefing\n\n"
         briefing += f"**Base of Operations:** {start_site_dict['Site Name']}\n"
-        briefing += f"**Asset:** {asset.name} (Stealth: {asset.stealth_factor}, Range: {asset.max_range_km}km)\n"
-        briefing += f"**Total Sorties:** {len(sorties)}\n\n"
+        briefing += f"**Fleet Strength:** {len(fleet)} Assets\n"
+        briefing += f"**Total Sorties Generated:** {len(sorties)}\n\n"
 
         if threats:
             briefing += f"**⚠️ Active Threat Zones:** {len(threats)}\n\n"
@@ -366,7 +383,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         for sortie in sorties:
             status_icon = "🟢" if sortie['status'] == "GREEN" else "🔴"
 
-            briefing += f"### {status_icon} Sortie #{sortie['id']} - {sortie['status_msg']}\n"
+            briefing += f"### {status_icon} Sortie #{sortie['id']} ({sortie['asset_name']}) - {sortie['status_msg']}\n"
             briefing += f"- **Distance:** {sortie['distance']} km\n"
             briefing += f"- **Est. Duration:** {sortie['est_duration_hrs']} hrs\n"
             briefing += f"- **Fuel Est:** {sortie['fuel_used']} units\n"
@@ -387,15 +404,10 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         briefing += f"**Total Fuel Required:** {round(total_fuel, 1)} units\n"
         briefing += f"**Total Operational Time:** {round(total_mission_time, 2)} hrs\n"
 
-        # Create a downloadable file content
-        import json
-        import tempfile
-
         mission_data = {
             "mission_name": "Heritage Ops Recon",
             "base": start_site_dict['Site Name'],
-            "asset": asset.to_dict(),
-            "sorties": [{k:v for k,v in s.items() if k != 'detailed_path'} for s in sorties], # Exclude huge path data
+            "sorties": [{k:v for k,v in s.items() if k != 'detailed_path'} for s in sorties],
             "threats": [t.to_dict() for t in threats] if threats else []
         }
         mission_json = json.dumps(mission_data, indent=4, default=str)
@@ -404,9 +416,12 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
             tmp_file.write(mission_json)
             mission_file_path = tmp_file.name
 
-        return briefing, map_html, mission_file_path
+        return briefing, map_html, mission_file_path, sorties
 
-    def generate_multi_sortie_map(df_map_data, sorties, start_site, threats=None):
+    def generate_multi_sortie_map(df_map_data, sorties, start_site, threats=None, simulation_states=None):
+        """
+        Generates map, optionally adding markers for simulation states (current positions).
+        """
         if df_map_data.empty:
              return "<p>No data</p>"
 
@@ -491,14 +506,52 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                 except:
                     continue
 
+        # Add Simulation Markers
+        if simulation_states:
+            for state in simulation_states:
+                s_id = state['id']
+                # find color
+                # sorties list is 0-indexed, s_id is 1-indexed usually in my logic
+                idx = (s_id - 1) % len(colors)
+                color = colors[idx]
+
+                folium.Marker(
+                    location=[state['lat'], state['lon']],
+                    icon=folium.Icon(color=color, icon='plane', prefix='fa'),
+                    popup=f"Sortie #{s_id} Current Pos"
+                ).add_to(site_map)
+
         return site_map._repr_html_()
 
-    # --- Simulation Logic (Placeholder/Basic) ---
-    def simulate_mission(progress):
-        # This would require re-generating the map with a marker at the interpolated position.
-        # Since we can't easily persist the 'sorties' object in Gradio without re-running planning,
-        # we will skip complex simulation for now unless we store 'last_mission_sorties' in a State.
-        return gr.update() # No-op for now
+    # --- Simulation Logic ---
+    def simulate_mission(progress, sorties, all_sites_df, threats):
+        if not sorties:
+            return gr.update(), {"status": "No Active Mission"}
+
+        if not MissionSimulator:
+             return gr.update(), {"error": "Simulator not loaded"}
+
+        # Initialize simulator just-in-time (cheap)
+        sim = MissionSimulator(sorties)
+        states = sim.get_state_at_progress(progress)
+
+        # Telemetry
+        telemetry = {}
+        for state in states:
+            s_id = state['id']
+            telemetry[f"Sortie_{s_id}"] = {
+                "lat": round(state['lat'], 4),
+                "lon": round(state['lon'], 4),
+                "status": "In Transit"
+            }
+
+        # We need to regenerate the map with the new markers
+        # We need the start site for the map gen. We can find it from the first sortie.
+        start_site = sorties[0]['route'][0] # Approximation
+
+        map_html = generate_multi_sortie_map(all_sites_df, sorties, start_site, threats, simulation_states=states)
+
+        return map_html, telemetry
 
     # Connect Mission Planner Events
     mp_execute_btn.click(
@@ -506,12 +559,20 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         inputs=[
             mp_site_selector,
             mp_start_selector,
-            mp_num_sorties,
-            mp_asset_selector,
+            fleet_uav_count,
+            fleet_suv_count,
+            fleet_helo_count,
+            fleet_sedan_count,
             all_sites_df_state,
             threats_state
         ],
-        outputs=[mp_briefing_output, mp_map_output, mp_download_file]
+        outputs=[mp_briefing_output, mp_map_output, mp_download_file, mission_sorties_state]
+    )
+
+    mp_sim_slider.change(
+        fn=simulate_mission,
+        inputs=[mp_sim_slider, mission_sorties_state, all_sites_df_state, threats_state],
+        outputs=[mp_map_output, mp_telemetry_output]
     )
 
 
