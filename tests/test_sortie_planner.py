@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 from planning import RoutePlanner, NumpyKMeans, StrategicSortiePlanner
+from assets import Asset
 
 class TestSortiePlanner(unittest.TestCase):
     def setUp(self):
@@ -12,6 +13,8 @@ class TestSortiePlanner(unittest.TestCase):
             {'Site Name': 'C', 'Latitude': 10, 'Longitude': 10}, # Far
             {'Site Name': 'D', 'Latitude': 10.1, 'Longitude': 10.1}, # Near C
         ]
+        # Create a test asset
+        self.asset = Asset("Test Asset", speed_kmh=100, max_range_km=5000, stealth_factor=0.5)
 
     def test_haversine(self):
         # Dist between 0,0 and 0,1 degree (approx 111km)
@@ -35,23 +38,31 @@ class TestSortiePlanner(unittest.TestCase):
 
     def test_single_sortie_plan(self):
         planner = StrategicSortiePlanner(self.base, self.sites)
-        sorties = planner.plan_sorties(num_sorties=1, avg_speed_kmh=100)
+        # Updated signature: pass asset instead of avg_speed_kmh
+        sorties = planner.plan_sorties(num_sorties=1, asset=self.asset)
 
         self.assertEqual(len(sorties), 1)
         self.assertEqual(sorties[0]['site_count'], 4) # Should visit all 4 unique sites
 
-        # Route should have Base -> ... -> Base. Total nodes = 4 unique + 2 bases = 6?
-        # or Base -> A -> B -> C -> D -> Base
-        # The optimize_route with return_to_start=True returns [Base, ..., Base]
+        # Route should have Base -> ... -> Base.
         self.assertEqual(sorties[0]['route'][0]['Site Name'], 'Base')
         self.assertEqual(sorties[0]['route'][-1]['Site Name'], 'Base')
 
     def test_multi_sortie_plan(self):
         planner = StrategicSortiePlanner(self.base, self.sites)
-        sorties = planner.plan_sorties(num_sorties=2, avg_speed_kmh=100)
+        sorties = planner.plan_sorties(num_sorties=2, asset=self.asset)
 
         self.assertEqual(len(sorties), 2)
         # One sortie should have 2 sites, the other 2 sites
+        counts = sorted([s['site_count'] for s in sorties])
+        self.assertEqual(counts, [2, 2])
+
+    def test_fleet_plan(self):
+        planner = StrategicSortiePlanner(self.base, self.sites)
+        fleet = [self.asset, self.asset]
+        sorties = planner.plan_fleet_mission(fleet=fleet)
+
+        self.assertEqual(len(sorties), 2)
         counts = sorted([s['site_count'] for s in sorties])
         self.assertEqual(counts, [2, 2])
 

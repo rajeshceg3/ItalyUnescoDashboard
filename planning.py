@@ -7,6 +7,7 @@ except ImportError:
     TacticalRouter = None
 
 from assets import Asset
+from scipy.optimize import linear_sum_assignment
 
 class RoutePlanner:
     """
@@ -186,95 +187,131 @@ class StrategicSortiePlanner:
     def plan_sorties(self, num_sorties=1, asset=None, threats=None):
         """
         Generates a mission plan with 'num_sorties' sorties.
+        Uses K-Means to cluster targets, but assumes identical assets.
+        Kept for backward compatibility.
+        """
+        # Create a fleet of identical assets
+        if asset is None:
+             # Default fallback
+             asset = Asset("Generic", 60, 500, 0.0, 10.0)
+
+        fleet = [asset] * int(num_sorties)
+        return self.plan_fleet_mission(fleet, threats)
+
+    def plan_fleet_mission(self, fleet, threats=None):
+        """
+        Generates a mission plan for a specific heterogeneous fleet.
 
         Args:
-            num_sorties (int): Number of sorties (clusters) to split the targets into.
-            asset (Asset): The asset being used (defines speed, range, stealth).
+            fleet (list of Asset): The list of available assets.
             threats (list): Optional list of ThreatZone objects.
 
         Returns:
-            list of dicts, where each dict is a sortie plan:
-            {
-                'id': int,
-                'route': list of sites,
-                'distance': float,
-                'est_duration_hrs': float,
-                'detailed_path': list of tuples
-            }
+            list of dicts (sorties).
         """
         if not self.target_sites:
             return []
 
-        avg_speed_kmh = asset.speed_kmh if asset else 60.0
+        num_assets = len(fleet)
+        num_targets = len(self.target_sites)
 
-        # If only 1 sortie, just run standard optimization (Round Trip)
-        if num_sorties == 1:
-            raw_route = RoutePlanner.optimize_route(self.base_site, self.target_sites, return_to_start=True, threats=threats, asset=asset)
-            dist = raw_route['total_distance_km']
-            # Estimate time: Driving + 2 hours per site
-            transit_time = dist / avg_speed_kmh
-            unique_targets = len(self.target_sites)
-            mission_time = transit_time + (unique_targets * 2.0)
+        # If we have more assets than targets, we only use the best N assets.
+        # But for simplicity, we cluster into min(num_assets, num_targets)
+        k = min(num_assets, num_targets)
 
-            fuel_used = dist / asset.fuel_efficiency if asset else 0
-
-            status = "GREEN"
-            status_msg = "Mission Feasible"
-            if asset and dist > asset.max_range_km:
-                status = "RED"
-                status_msg = f"CRITICAL: Exceeds Max Range ({asset.max_range_km} km)"
-
-            return [{
-                'id': 1,
-                'route': raw_route['route'],
-                'distance': dist,
-                'est_duration_hrs': round(mission_time, 2),
-                'site_count': unique_targets,
-                'detailed_path': raw_route.get('detailed_path', []),
-                'risk_score': raw_route.get('risk_score', 0.0),
-                'fuel_used': round(fuel_used, 1),
-                'status': status,
-                'status_msg': status_msg
-            }]
-
-        # Prepare data for clustering
-        # We use Latitude/Longitude.
-        # Note: Euclidean distance on Lat/Lon is not perfect but sufficient for clustering at this scale.
+        # 1. Cluster Targets
         coords = np.array([[float(s['Latitude']), float(s['Longitude'])] for s in self.target_sites])
-
-        # Handle case where k > n_samples
-        k = min(num_sorties, len(self.target_sites))
-
         kmeans = NumpyKMeans(k=k)
         labels = kmeans.fit(coords)
 
-        sorties = []
+        clusters = []
         for i in range(k):
-            # Get sites belonging to this cluster
-            cluster_indices = np.where(labels == i)[0]
-            cluster_sites = [self.target_sites[idx] for idx in cluster_indices]
+             cluster_indices = np.where(labels == i)[0]
+             cluster_sites = [self.target_sites[idx] for idx in cluster_indices]
 
-            # Optimize route for this cluster (Round Trip from Base)
-            route_result = RoutePlanner.optimize_route(self.base_site, cluster_sites, return_to_start=True, threats=threats, asset=asset)
+             # Calculate centroid (naive mean of lat/lon)
+             centroid = np.mean([[float(s['Latitude']), float(s['Longitude'])] for s in cluster_sites], axis=0)
+             clusters.append({
+                 'sites': cluster_sites,
+                 'centroid': centroid
+             })
+
+        # 2. Assign Clusters to Assets (Linear Assignment Problem)
+        # We need a Cost Matrix where C[i, j] is cost of Asset i handling Cluster j.
+        # Cost = Time taken. If impossible (Range exceeded), Cost = Infinite.
+
+        cost_matrix = np.zeros((num_assets, k))
+
+        # Pre-calculate distances from Base to Centroids
+        base_coords = (float(self.base_site['Latitude']), float(self.base_site['Longitude']))
+
+        for i, asset in enumerate(fleet):
+            for j, cluster in enumerate(clusters):
+                # Approximate distance: Base -> Centroid -> Base + intra-cluster travel
+                # Distance to centroid
+                centroid_dist = RoutePlanner.haversine_distance(base_coords, tuple(cluster['centroid']))
+
+                # Estimate total route distance ~ 2 * centroid_dist + intra-cluster
+                # Intra-cluster is roughly (N-1) * avg_dist_between_sites.
+                # Let's simplify: 2.5 * centroid_dist usually covers the tour if dense.
+                # A better heuristic: 2 * centroid_dist + sum of distances from centroid to points.
+
+                intra_dist_sum = sum([RoutePlanner.haversine_distance(tuple(cluster['centroid']), (float(s['Latitude']), float(s['Longitude']))) for s in cluster['sites']])
+
+                est_total_dist = (2 * centroid_dist) + intra_dist_sum
+
+                # Check Range
+                if est_total_dist > asset.max_range_km:
+                    cost_matrix[i, j] = 1e9 # Impossible
+                else:
+                    # Cost is Time
+                    cost_matrix[i, j] = est_total_dist / asset.speed_kmh
+
+        # Solve Assignment
+        # If num_assets > k, some rows will be unassigned.
+        row_ind, col_ind = linear_sum_assignment(cost_matrix)
+
+        final_sorties = []
+
+        # Process assignments
+        for r, c in zip(row_ind, col_ind):
+            asset = fleet[r]
+            cluster = clusters[c]
+
+            # If cost was infinite, this assignment is invalid (mission failure for this cluster)
+            # But linear_sum_assignment forces an assignment.
+            # We handle the "Red" status in the output.
+
+            route_result = RoutePlanner.optimize_route(
+                self.base_site,
+                cluster['sites'],
+                return_to_start=True,
+                threats=threats,
+                asset=asset
+            )
 
             dist = route_result['total_distance_km']
-            transit_time = dist / avg_speed_kmh
-            mission_time = transit_time + (len(cluster_sites) * 2.0)
+            transit_time = dist / asset.speed_kmh
+            mission_time = transit_time + (len(cluster['sites']) * 2.0) # 2 hrs on site
 
-            fuel_used = dist / asset.fuel_efficiency if asset else 0
+            fuel_used = dist / asset.fuel_efficiency
 
             status = "GREEN"
             status_msg = "Mission Feasible"
-            if asset and dist > asset.max_range_km:
+            if dist > asset.max_range_km:
                 status = "RED"
                 status_msg = f"CRITICAL: Exceeds Max Range ({asset.max_range_km} km)"
+            elif cost_matrix[r, c] >= 1e9:
+                 status = "RED"
+                 status_msg = "CRITICAL: No suitable asset available"
 
-            sorties.append({
-                'id': i + 1,
+            final_sorties.append({
+                'id': r + 1, # Asset ID
+                'asset_name': asset.name,
                 'route': route_result['route'],
                 'distance': dist,
                 'est_duration_hrs': round(mission_time, 2),
-                'site_count': len(cluster_sites),
+                'site_count': len(cluster['sites']),
                 'detailed_path': route_result.get('detailed_path', []),
                 'risk_score': route_result.get('risk_score', 0.0),
                 'fuel_used': round(fuel_used, 1),
@@ -282,4 +319,91 @@ class StrategicSortiePlanner:
                 'status_msg': status_msg
             })
 
-        return sorties
+        return final_sorties
+
+class MissionSimulator:
+    """
+    Simulates the mission execution over time.
+    """
+    def __init__(self, sorties):
+        self.sorties = sorties # The output from plan_fleet_mission
+        # Pre-process trajectories
+        self.trajectories = {} # map sortie_id -> list of (t, lat, lon)
+
+        for sortie in sorties:
+            path = sortie['detailed_path']
+            if not path:
+                continue
+
+            total_dist = sortie['distance']
+            total_time = sortie['est_duration_hrs']
+
+            # Simple assumption: constant speed over the whole path
+            # t goes from 0 to 1 (normalized progress)
+
+            traj = []
+            num_points = len(path)
+            if num_points < 2:
+                 traj = [(0.0, path[0][0], path[0][1]), (1.0, path[0][0], path[0][1])]
+            else:
+                # We distribute time proportional to index (approximation)
+                # Better: distribute by segment length
+                # Calculate cumulative distance
+                cum_dist = [0.0]
+                for i in range(1, num_points):
+                    d = RoutePlanner.haversine_distance(path[i-1], path[i])
+                    cum_dist.append(cum_dist[-1] + d)
+
+                total_d = cum_dist[-1]
+                if total_d == 0:
+                     traj = [(0.0, path[0][0], path[0][1]), (1.0, path[0][0], path[0][1])]
+                else:
+                    for i in range(num_points):
+                        t_norm = cum_dist[i] / total_d
+                        traj.append((t_norm, path[i][0], path[i][1]))
+
+            self.trajectories[sortie['id']] = traj
+
+    def get_state_at_progress(self, progress_pct):
+        """
+        Returns the positions of all assets at a given progress percentage (0-100).
+        """
+        t_req = progress_pct / 100.0
+        states = []
+
+        for s_id, traj in self.trajectories.items():
+            # Find segment [i, i+1] where traj[i].t <= t_req <= traj[i+1].t
+            # Binary search or linear scan
+
+            found = False
+            for i in range(len(traj) - 1):
+                t1, lat1, lon1 = traj[i]
+                t2, lat2, lon2 = traj[i+1]
+
+                if t1 <= t_req <= t2:
+                    # Interpolate
+                    span = t2 - t1
+                    if span == 0:
+                        lat, lon = lat1, lon1
+                    else:
+                        ratio = (t_req - t1) / span
+                        lat = lat1 + (lat2 - lat1) * ratio
+                        lon = lon1 + (lon2 - lon1) * ratio
+
+                    states.append({
+                        'id': s_id,
+                        'lat': lat,
+                        'lon': lon
+                    })
+                    found = True
+                    break
+
+            if not found:
+                # Must be at end
+                states.append({
+                    'id': s_id,
+                    'lat': traj[-1][1],
+                    'lon': traj[-1][2]
+                })
+
+        return states
