@@ -198,13 +198,37 @@ class StrategicSortiePlanner:
         fleet = [asset] * int(num_sorties)
         return self.plan_fleet_mission(fleet, threats)
 
-    def plan_fleet_mission(self, fleet, threats=None):
+    def generate_coas(self, fleet, threats=None):
+        """
+        Generates three Courses of Action (COAs):
+        1. SPEED: Maximizes speed (standard behavior).
+        2. STEALTH: Prioritizes avoidance, even at high distance cost.
+        3. EFFICIENCY: Prioritizes fuel economy (shortest distance).
+        """
+        coas = {}
+
+        # 1. SPEED (Standard)
+        coas['SPEED'] = self.plan_fleet_mission(fleet, threats, strategy='speed')
+
+        # 2. STEALTH (High caution)
+        # We simulate this by effectively increasing threat radius perception in the planner or logic
+        # But since optimize_route takes 'threats', we rely on the asset's stealth factor primarily.
+        # To make a distinct COA, we can modify the cost matrix to penalize assigning low-stealth assets to dangerous clusters.
+        coas['STEALTH'] = self.plan_fleet_mission(fleet, threats, strategy='stealth')
+
+        # 3. EFFICIENCY
+        coas['EFFICIENCY'] = self.plan_fleet_mission(fleet, threats, strategy='efficiency')
+
+        return coas
+
+    def plan_fleet_mission(self, fleet, threats=None, strategy='speed'):
         """
         Generates a mission plan for a specific heterogeneous fleet.
 
         Args:
             fleet (list of Asset): The list of available assets.
             threats (list): Optional list of ThreatZone objects.
+            strategy (str): 'speed', 'stealth', or 'efficiency'.
 
         Returns:
             list of dicts (sorties).
@@ -260,12 +284,26 @@ class StrategicSortiePlanner:
 
                 est_total_dist = (2 * centroid_dist) + intra_dist_sum
 
+                # --- STRATEGY ADJUSTMENTS ---
+                # Default cost is Time
+                base_cost = est_total_dist / asset.speed_kmh
+
+                if strategy == 'efficiency':
+                    # Cost is Fuel
+                    base_cost = est_total_dist / asset.fuel_efficiency
+
+                elif strategy == 'stealth':
+                    # Cost is Risk (Distance / Stealth)
+                    # Low stealth factor (0.2) -> High Cost.
+                    # High stealth factor (0.8) -> Low Cost.
+                    stealth_mod = max(0.1, asset.stealth_factor)
+                    base_cost = (est_total_dist / asset.speed_kmh) * (1.0 / stealth_mod)
+
                 # Check Range
                 if est_total_dist > asset.max_range_km:
                     cost_matrix[i, j] = 1e9 # Impossible
                 else:
-                    # Cost is Time
-                    cost_matrix[i, j] = est_total_dist / asset.speed_kmh
+                    cost_matrix[i, j] = base_cost
 
         # Solve Assignment
         # If num_assets > k, some rows will be unassigned.

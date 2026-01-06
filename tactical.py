@@ -208,3 +208,45 @@ class TacticalRouter:
                     risk_score += ratio ** 2
 
         return round(risk_score, 2)
+
+    @staticmethod
+    def probabilistic_conflict(dist_km, radius_km, uncertainty_factor=0.0):
+        """
+        Determines the probability of conflict/detection given a distance and threat radius.
+
+        Args:
+            dist_km (float): Distance from threat center.
+            radius_km (float): Threat radius.
+            uncertainty_factor (float): Multiplier for uncertainty (0.0 to 1.0).
+
+        Returns:
+            float: Probability (0.0 to 1.0)
+        """
+        # If inside radius, p=1.0
+        if dist_km <= radius_km:
+            return 1.0
+
+        # If just outside, depends on uncertainty.
+        # We model the effective radius as a Gaussian distribution.
+        # P(conflict) = P(R_eff > dist)
+        # Assume R_eff ~ N(radius, (radius * uncertainty)^2)
+
+        if uncertainty_factor <= 0:
+            return 0.0
+
+        sigma = radius_km * uncertainty_factor
+        z_score = (dist_km - radius_km) / sigma
+
+        # Approximation of Q-function (1 - CDF)
+        # Using a simple sigmoid-like decay for performance and simplicity
+        # p = 0.5 at boundary if we centered there, but we are outside.
+        # Actually, let's just use a simple linear falloff for simulation speed
+
+        # Effective max reach is radius * (1 + 3*uncertainty) (3 sigma)
+        max_reach = radius_km * (1 + 3 * uncertainty_factor)
+
+        if dist_km >= max_reach:
+            return 0.0
+
+        # Linear interp between 1.0 at radius and 0.0 at max_reach
+        return 1.0 - ((dist_km - radius_km) / (max_reach - radius_km))
