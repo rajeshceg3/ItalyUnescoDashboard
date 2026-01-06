@@ -1,0 +1,54 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.9"
+        cache: 'pip' # Caching pip dependencies for speed
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests
+      run: |
+        python -m unittest discover tests
+
+  build-and-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - uses: actions/checkout@v4
+
+    # Build Docker image to ensure it builds correctly
+    - name: Build Docker image
+      run: docker build . --file Dockerfile --tag app-image:$(date +%s)
+
+    # Deployment Step
+    # Recommended Platform: Render (for Python/Docker apps)
+    # Why: Easiest setup, handles Docker native, free tier available.
+    # To enable:
+    # 1. Create a Web Service on Render connected to this repo.
+    # 2. Get the "Deploy Hook URL" from Render settings.
+    # 3. Add it as a repository secret named RENDER_DEPLOY_HOOK_URL.
+
+    - name: Deploy to Render
+      if: success() && secrets.RENDER_DEPLOY_HOOK_URL != ''
+      env:
+        deploy_url: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+      run: |
+        curl "$deploy_url"
