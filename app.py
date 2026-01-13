@@ -232,53 +232,65 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         # --- TAB 1: EXPLORER ---
         with gr.Tab("Site Explorer"):
             with gr.Column(elem_id="main_content_area_dynamic") as main_content_area:
-                countries = ["Italy", "France"]
-                country_dropdown = gr.Dropdown(
-                    label="Select Country",
-                    choices=countries,
-                    value="Italy",
-                    elem_id="country_dropdown_dynamic"
-                )
+                # --- Controls Section ---
+                with gr.Row(elem_id="explorer_controls"):
+                    with gr.Column(scale=1, min_width=200):
+                        countries = ["Italy", "France"]
+                        country_dropdown = gr.Dropdown(
+                            label="Select Country",
+                            choices=countries,
+                            value="Italy",
+                            elem_id="country_dropdown_dynamic"
+                        )
+                    with gr.Column(scale=3):
+                        search_box = gr.Textbox(label="Search by Name or Description", elem_id="search_box_dynamic", placeholder="Type to search sites...")
 
-                search_box = gr.Textbox(label="Search by Name or Description", elem_id="search_box_dynamic")
-                gr.Markdown("## Map of Sites", elem_id="map_title_md_dynamic")
-                map_output = gr.HTML(elem_id="map_output_html_dynamic")
+                # --- Main Split Layout ---
+                with gr.Row(elem_id="explorer_content_split"):
+                    # Left Column: List of Sites
+                    with gr.Column(scale=1, elem_id="explorer_list_col"):
+                        # Render Area for Cards
+                        with gr.Column(elem_id="sites_cards_area_dynamic") as sites_cards_area:
+                             # --- Card Rendering Function (using @gr.render) ---
+                            @gr.render(inputs=[filtered_sites_df_state, all_sites_df_state], triggers=[app.load, search_box.submit, country_dropdown.change])
+                            def render_site_cards(df_render_data, all_sites_df_state_for_click_handler):
+                                if df_render_data.empty:
+                                    gr.Markdown("No sites found matching your criteria.", elem_id="no_sites_found_md")
+                                    return
 
-                # Render Area for Cards - Moved decorator INSIDE the scope
-                with gr.Column(elem_id="sites_cards_area_dynamic") as sites_cards_area:
-                     # --- Card Rendering Function (using @gr.render) ---
-                    @gr.render(inputs=[filtered_sites_df_state, all_sites_df_state], triggers=[app.load, search_box.submit, country_dropdown.change])
-                    def render_site_cards(df_render_data, all_sites_df_state_for_click_handler):
-                        if df_render_data.empty:
-                            gr.Markdown("No sites found matching your criteria.", elem_id="no_sites_found_md")
-                            return
+                                for index, row_data in df_render_data.iterrows():
+                                    site_name = row_data['Site Name']
+                                    with gr.Group(elem_classes=["site-card"]): # Add custom class
+                                        if pd.notna(row_data['Image URL']) and row_data['Image URL'] != "N/A":
+                                            gr.HTML(f"<img src='{row_data['Image URL']}' style='height:200px; width:100%; object-fit:cover; border-radius: 8px 8px 0 0;'>")
+                                        else:
+                                            gr.HTML("<div style='height:200px; width:100%; background-color: #f0f0f0; display: flex; align-items: center; justify-content: center; border-radius: 8px 8px 0 0; color: #888;'>No Image</div>")
 
-                        for index, row_data in df_render_data.iterrows():
-                            site_name = row_data['Site Name']
-                            with gr.Group():
-                                if pd.notna(row_data['Image URL']) and row_data['Image URL'] != "N/A":
-                                    gr.HTML(f"<img src='{row_data['Image URL']}' style='height:200px; width:100%; object-fit:cover; border-radius: 8px;'>")
-                                else:
-                                    gr.HTML("<div style='height:200px; width:100%; background-color: #f0f0f0; display: flex; align-items: center; justify-content: center; border-radius: 8px; color: #888;'>No Image</div>")
-                                gr.Markdown(f"### {site_name}", elem_classes=['card-title'])
-                                gr.Textbox(value=row_data.get('Location', 'N/A'), label="Location", interactive=False, lines=1)
+                                        with gr.Column(elem_classes=["card-content"]):
+                                            gr.Markdown(f"### {site_name}", elem_classes=['card-title'])
+                                            gr.Textbox(value=row_data.get('Location', 'N/A'), label="Location", interactive=False, lines=1)
 
-                                view_details_btn = gr.Button("View Details")
+                                            view_details_btn = gr.Button("View Details", elem_classes=["view-details-btn"])
 
-                                view_details_btn.click(
-                                    fn=show_site_details,
-                                    inputs=[gr.State(value=site_name), all_sites_df_state],
-                                    outputs=[
-                                        detailed_view_area,
-                                        main_content_area,
-                                        detail_site_name_md,
-                                        detail_image_display,
-                                        detail_desc_text,
-                                        detail_location_text,
-                                        detail_year_text,
-                                        detail_unesco_text
-                                    ]
-                                )
+                                        view_details_btn.click(
+                                            fn=show_site_details,
+                                            inputs=[gr.State(value=site_name), all_sites_df_state],
+                                            outputs=[
+                                                detailed_view_area,
+                                                main_content_area,
+                                                detail_site_name_md,
+                                                detail_image_display,
+                                                detail_desc_text,
+                                                detail_location_text,
+                                                detail_year_text,
+                                                detail_unesco_text
+                                            ]
+                                        )
+
+                    # Right Column: Map
+                    with gr.Column(scale=2, elem_id="explorer_map_col"):
+                        gr.Markdown("## Map of Sites", elem_id="map_title_md_dynamic")
+                        map_output = gr.HTML(elem_id="map_output_html_dynamic")
 
                 scrape_data_button = gr.Button("Generate/Refresh Data for Selected Country", visible=False, elem_id="scrape_data_button_dynamic")
                 scraper_instructions_md = gr.Markdown("", visible=False, elem_id="scraper_instructions_md_dynamic")
