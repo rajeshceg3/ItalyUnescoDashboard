@@ -193,7 +193,8 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
     wargame_results_state = gr.State({}) # Store COAs
 
     # --- Header ---
-    main_title_md = gr.Markdown("# Italy UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic")
+    with gr.Group(elem_id="header_area"):
+        main_title_md = gr.Markdown("# Italy UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic")
 
     # --- Define Detail View Handler (defined early so it can be called) ---
     def show_site_details(site_name_to_display, current_all_sites_df):
@@ -307,86 +308,88 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
         # --- TAB 2: MISSION PLANNER ---
         with gr.Tab("Mission Planner"):
-            gr.Markdown("## Heritage Ops: Tactical Site Reconnaissance & Route Planning")
-            gr.Markdown("Select a squad of sites to visit and generate an optimized tactical route.")
+            with gr.Column(elem_classes=["dashboard-panel"]):
+                gr.Markdown("## Heritage Ops: Tactical Site Reconnaissance & Route Planning")
+                gr.Markdown("Select a squad of sites to visit and generate an optimized tactical route.")
 
-            with gr.Accordion("⚠️ Tactical Intel & Threat Assessment", open=False):
-                with gr.Row():
-                    with gr.Column():
-                        threat_lat = gr.Number(label="Latitude", value=42.0)
-                        threat_lon = gr.Number(label="Longitude", value=12.5)
-                        threat_rad = gr.Slider(minimum=1, maximum=100, value=20, label="Radius (km)")
-                        threat_name = gr.Textbox(label="Threat ID", value="Hostile Area")
-                        add_threat_btn = gr.Button("Add Threat Zone")
-                    with gr.Column():
-                        threat_list_display = gr.JSON(label="Active Threats", value=[])
-                        clear_threats_btn = gr.Button("Clear All Threats", variant="stop")
-
-            with gr.Row():
-                with gr.Column(scale=1):
-                    # Initial choices from Italy (default)
-                    site_names = sorted(initial_df['Site Name'].tolist()) if not initial_df.empty else []
-
-                    mp_site_selector = gr.Dropdown(
-                        choices=site_names,
-                        label="Select Target Sites",
-                        multiselect=True,
-                        info="Select at least 2 sites."
-                    )
-
-                    mp_start_selector = gr.Dropdown(
-                        choices=site_names,
-                        label="Insertion Point (Start Site)",
-                        info="Optional. If empty, the first selected site is used."
-                    )
-
-                    gr.Markdown("### Fleet Composition")
+                with gr.Accordion("⚠️ Tactical Intel & Threat Assessment", open=False):
                     with gr.Row():
-                         # Dynamic fleet composition
-                         # For simplicity, we create specific inputs for each asset type count
-                         fleet_uav_count = gr.Number(label="UAV (Drone)", value=1, precision=0, minimum=0)
-                         fleet_suv_count = gr.Number(label="SUV (Ground)", value=0, precision=0, minimum=0)
-                         fleet_helo_count = gr.Number(label="Helo (Air)", value=0, precision=0, minimum=0)
-                         fleet_sedan_count = gr.Number(label="Sedan (Covert)", value=0, precision=0, minimum=0)
+                        with gr.Column():
+                            threat_lat = gr.Number(label="Latitude", value=42.0)
+                            threat_lon = gr.Number(label="Longitude", value=12.5)
+                            threat_rad = gr.Slider(minimum=1, maximum=100, value=20, label="Radius (km)")
+                            threat_name = gr.Textbox(label="Threat ID", value="Hostile Area")
+                            add_threat_btn = gr.Button("Add Threat Zone", elem_classes=["secondary-btn"])
+                        with gr.Column():
+                            threat_list_display = gr.JSON(label="Active Threats", value=[])
+                            clear_threats_btn = gr.Button("Clear All Threats", variant="stop")
 
-                    mp_execute_btn = gr.Button("Execute Mission Plan", variant="primary")
-                    mp_download_file = gr.File(label="Download Orders")
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        # Initial choices from Italy (default)
+                        site_names = sorted(initial_df['Site Name'].tolist()) if not initial_df.empty else []
 
-                with gr.Column(scale=2):
-                    mp_map_output = gr.HTML(label="Tactical Map")
+                        mp_site_selector = gr.Dropdown(
+                            choices=site_names,
+                            label="Select Target Sites",
+                            multiselect=True,
+                            info="Select at least 2 sites."
+                        )
 
-            with gr.Row():
-                 mp_sim_slider = gr.Slider(minimum=0, maximum=100, value=0, label="Mission Simulation Progress (%)", interactive=True)
-                 mp_telemetry_output = gr.JSON(label="Live Telemetry", value={"status": "Standby"}, elem_id="mp_telemetry_output")
+                        mp_start_selector = gr.Dropdown(
+                            choices=site_names,
+                            label="Insertion Point (Start Site)",
+                            info="Optional. If empty, the first selected site is used."
+                        )
 
-            with gr.Row():
-                mp_briefing_output = gr.Markdown(label="Operational Briefing")
+                        gr.Markdown("### Fleet Composition")
+                        with gr.Row():
+                             # Dynamic fleet composition
+                             # For simplicity, we create specific inputs for each asset type count
+                             fleet_uav_count = gr.Number(label="UAV (Drone)", value=1, precision=0, minimum=0)
+                             fleet_suv_count = gr.Number(label="SUV (Ground)", value=0, precision=0, minimum=0)
+                             fleet_helo_count = gr.Number(label="Helo (Air)", value=0, precision=0, minimum=0)
+                             fleet_sedan_count = gr.Number(label="Sedan (Covert)", value=0, precision=0, minimum=0)
+
+                        mp_execute_btn = gr.Button("Execute Mission Plan", variant="primary", elem_classes=["primary-btn"])
+                        mp_download_file = gr.File(label="Download Orders")
+
+                    with gr.Column(scale=2):
+                        mp_map_output = gr.HTML(label="Tactical Map")
+
+                with gr.Row():
+                     mp_sim_slider = gr.Slider(minimum=0, maximum=100, value=0, label="Mission Simulation Progress (%)", interactive=True)
+                     mp_telemetry_output = gr.JSON(label="Live Telemetry", value={"status": "Standby"}, elem_id="mp_telemetry_output")
+
+                with gr.Row():
+                    mp_briefing_output = gr.Markdown(label="Operational Briefing")
 
         # --- TAB 3: WAR ROOM (NEW) ---
         with gr.Tab("War Room"):
-            gr.Markdown("## Predictive Operational Wargaming Engine (POWE)")
-            gr.Markdown("Run Monte Carlo simulations to stress-test mission plans against probabilistic threats and environmental variables.")
+            with gr.Column(elem_classes=["dashboard-panel"]):
+                gr.Markdown("## Predictive Operational Wargaming Engine (POWE)")
+                gr.Markdown("Run Monte Carlo simulations to stress-test mission plans against probabilistic threats and environmental variables.")
 
-            with gr.Row():
-                wr_generate_btn = gr.Button("Generate Strategy Variants (COAs)", variant="primary")
-                wr_simulate_btn = gr.Button("Run Monte Carlo Simulation (100 Runs)", variant="secondary")
+                with gr.Row():
+                    wr_generate_btn = gr.Button("Generate Strategy Variants (COAs)", variant="primary", elem_classes=["primary-btn"])
+                    wr_simulate_btn = gr.Button("Run Monte Carlo Simulation (100 Runs)", variant="secondary", elem_classes=["secondary-btn"])
 
-            gr.Markdown("### Strategy Comparison")
-            with gr.Row():
-                with gr.Column():
-                    gr.Markdown("#### Option A: SPEED")
-                    wr_stats_speed = gr.JSON(label="Simulation Stats")
-                    wr_select_speed_btn = gr.Button("Select Option A")
-                with gr.Column():
-                    gr.Markdown("#### Option B: STEALTH")
-                    wr_stats_stealth = gr.JSON(label="Simulation Stats")
-                    wr_select_stealth_btn = gr.Button("Select Option B")
-                with gr.Column():
-                    gr.Markdown("#### Option C: EFFICIENCY")
-                    wr_stats_efficiency = gr.JSON(label="Simulation Stats")
-                    wr_select_efficiency_btn = gr.Button("Select Option C")
+                gr.Markdown("### Strategy Comparison")
+                with gr.Row():
+                    with gr.Column(elem_classes=["strategy-card"]):
+                        gr.Markdown("#### Option A: SPEED")
+                        wr_stats_speed = gr.JSON(label="Simulation Stats")
+                        wr_select_speed_btn = gr.Button("Select Option A", elem_classes=["secondary-btn"])
+                    with gr.Column(elem_classes=["strategy-card"]):
+                        gr.Markdown("#### Option B: STEALTH")
+                        wr_stats_stealth = gr.JSON(label="Simulation Stats")
+                        wr_select_stealth_btn = gr.Button("Select Option B", elem_classes=["secondary-btn"])
+                    with gr.Column(elem_classes=["strategy-card"]):
+                        gr.Markdown("#### Option C: EFFICIENCY")
+                        wr_stats_efficiency = gr.JSON(label="Simulation Stats")
+                        wr_select_efficiency_btn = gr.Button("Select Option C", elem_classes=["secondary-btn"])
 
-            wr_plot_output = gr.Plot(label="Risk vs Reward Analysis")
+                wr_plot_output = gr.Plot(label="Risk vs Reward Analysis")
 
     # --- HELPER: Update Mission Planner Choices ---
     def update_mp_choices(df):
