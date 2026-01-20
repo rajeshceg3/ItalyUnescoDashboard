@@ -1,5 +1,4 @@
 /* Global Styling & Root Variables */
-
 :root {
     /* Color Palette - "Stripe-like" clean, vibrant but professional */
     --primary-theme-color: #635bff; /* Stripe Purple/Blue */
@@ -12,28 +11,30 @@
     --border-color: #e6ebf1;
     --heading-font: 'Montserrat', sans-serif;
     --body-font: 'Open Sans', sans-serif;
-    --shadow-sm: 0 2px 5px rgba(50, 50, 93, 0.1), 0 1px 1px rgba(0, 0, 0, 0.04);
-    --shadow-md: 0 6px 12px -2px rgba(50, 50, 93, 0.25), 0 3px 7px -3px rgba(0, 0, 0, 0.3);
-    --shadow-lg: 0 13px 27px -5px rgba(50, 50, 93, 0.25), 0 8px 16px -8px rgba(0, 0, 0, 0.3);
+
+    /* Shadows */
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+    /* Spacing & Radius */
+    --radius-sm: 4px;
     --radius-md: 8px;
-    --radius-lg: 16px;
-    --radius-full: 9999px;
+    --radius-lg: 12px;
+    --radius-xl: 20px;
+
+    /* Status Colors */
     --status-red: #ef4444;
     --status-green: #10b981;
 }
 
 @keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-/* Main page styling */
+/* --- Main Page Reset --- */
 body, .gradio-container {
     font-family: var(--body-font) !important;
     background-color: var(--page-background-color) !important;
@@ -42,180 +43,204 @@ body, .gradio-container {
     padding: 0;
 }
 
-/* Constrain width */
+/* Constraint & Layout */
 .gradio-container > .flex.w-full {
-    max-width: 1600px; /* Increased for split view */
+    max-width: 1600px;
     margin: 0 auto;
     padding: 0 20px;
 }
 
-/* --- Typography & Headings --- */
-#main_title_md_dynamic .gr-markdown h1,
-#map_title_md_dynamic .gr-markdown h2,
-#detail_site_name_md_dynamic .gr-markdown h2 {
-    font-family: var(--heading-font) !important;
-    color: var(--primary-text-color);
-    font-weight: 700;
-    letter-spacing: -0.5px;
-}
-
-#main_title_md_dynamic .gr-markdown h1 {
-    font-size: 2.5em;
+/* --- Header Section --- */
+#header_area {
     margin-top: 40px;
-    margin-bottom: 30px;
+    margin-bottom: 40px;
     text-align: center;
 }
 
-#map_title_md_dynamic .gr-markdown h2 {
-    font-size: 1.5em;
-    margin-top: 10px;
+#main_title_md_dynamic .gr-markdown h1 {
+    font-family: var(--heading-font);
+    font-weight: 800;
+    font-size: 2.8rem;
+    background: linear-gradient(135deg, var(--primary-theme-color), var(--accent-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -1px;
     margin-bottom: 10px;
-    padding-bottom: 5px;
 }
 
-/* --- Layout Sections --- */
-#main_content_area_dynamic, #detailed_view_area_dynamic {
-    background-color: transparent;
-    border: none;
-    box-shadow: none;
-    padding: 0;
-}
-
-/* --- Split View Layout --- */
-#explorer_content_split {
-    gap: 20px;
-    align-items: flex-start; /* Ensure sticky works */
-}
-
-#explorer_list_col {
-    height: calc(100vh - 200px); /* Adjust based on header height */
-    overflow-y: auto;
-    padding-right: 15px; /* Space for scrollbar */
-}
-
-/* Elegant Scrollbar */
-#explorer_list_col::-webkit-scrollbar {
-    width: 6px;
-}
-#explorer_list_col::-webkit-scrollbar-track {
-    background: transparent;
-}
-#explorer_list_col::-webkit-scrollbar-thumb {
-    background-color: rgba(66, 84, 102, 0.3);
-    border-radius: 10px;
-}
-#explorer_list_col::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(66, 84, 102, 0.5);
-}
-
-#explorer_map_col {
-    position: sticky;
-    top: 20px;
-    height: auto; /* Let content dictate, or fixed */
-    min-height: 500px;
-}
-
-/* --- Controls Section --- */
-#explorer_controls {
-    margin-bottom: 20px;
-    align-items: flex-end;
-}
-
-/* --- Tabs --- */
+/* --- Tabs Styling --- */
 .tabs {
     border-bottom: 1px solid var(--border-color);
     margin-bottom: 30px;
+    background: transparent;
+}
+.tab-nav {
+    display: flex;
+    gap: 20px;
 }
 .tab-nav button {
     font-family: var(--heading-font) !important;
     font-weight: 600 !important;
     color: var(--secondary-text-color) !important;
-    border: none !important;
     background: transparent !important;
-    padding: 15px 25px !important;
+    border: none !important;
+    padding: 10px 0 !important;
+    font-size: 1rem !important;
+    position: relative;
     transition: color 0.2s ease;
+}
+.tab-nav button:hover {
+    color: var(--primary-theme-color) !important;
 }
 .tab-nav button.selected {
     color: var(--primary-theme-color) !important;
-    border-bottom: 2px solid var(--primary-theme-color) !important;
+    font-weight: 700 !important;
+}
+.tab-nav button.selected::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    width: 100%;
+    height: 3px;
+    background-color: var(--primary-theme-color);
+    border-radius: 3px 3px 0 0;
 }
 
-/* --- Search Box & Inputs --- */
-#search_box_dynamic .gr-input-container,
-.gr-input-container input[type="text"],
-.gr-input-container input[type="number"],
+/* --- Inputs & Dropdowns --- */
+.gr-input-container, .gr-dropdown {
+    background: transparent !important;
+    border: none !important;
+}
+
+.gr-input-container input,
 .gr-input-container textarea,
 .gr-dropdown .wrap-inner {
     background-color: white !important;
     border: 1px solid var(--border-color) !important;
     border-radius: var(--radius-md) !important;
+    padding: 12px 16px !important;
+    font-size: 1rem !important;
+    color: var(--primary-text-color) !important;
     box-shadow: var(--shadow-sm) !important;
-    transition: all 0.2s ease;
-    padding: 10px 14px !important;
+    transition: all 0.2s ease-in-out;
 }
 
-#search_box_dynamic .gr-input-container:focus-within,
 .gr-input-container input:focus,
+.gr-input-container textarea:focus,
 .gr-dropdown .wrap-inner:focus-within {
     border-color: var(--primary-theme-color) !important;
-    box-shadow: 0 0 0 3px rgba(99, 91, 255, 0.15) !important;
+    box-shadow: 0 0 0 3px rgba(99, 91, 255, 0.1) !important;
     outline: none !important;
 }
 
 /* --- Buttons --- */
-.gr-button button, button.gr-button {
+/* Standard Button Reset */
+.gr-button {
     font-family: var(--heading-font) !important;
     font-weight: 600 !important;
-    background-color: var(--primary-theme-color) !important;
-    color: white !important;
-    border-radius: var(--radius-md) !important;
-    padding: 10px 20px !important;
     border: none !important;
-    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+    border-radius: var(--radius-md) !important;
+    padding: 12px 24px !important;
+    cursor: pointer !important;
     transition: all 0.2s ease !important;
+    font-size: 0.95rem !important;
 }
 
-.gr-button button:hover, button.gr-button:hover {
+/* Primary Button */
+.primary-btn, button.primary {
+    background-color: var(--primary-theme-color) !important;
+    color: white !important;
+    box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+}
+.primary-btn:hover, button.primary:hover {
     background-color: var(--primary-hover) !important;
-    transform: translateY(-1px);
+    transform: translateY(-2px);
     box-shadow: 0 7px 14px rgba(50, 50, 93, 0.1), 0 3px 6px rgba(0, 0, 0, 0.08) !important;
 }
 
-.gr-button button:active, button.gr-button:active {
-    transform: translateY(1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+/* Secondary Button */
+.secondary-btn, button.secondary {
+    background-color: white !important;
+    color: var(--primary-theme-color) !important;
+    border: 1px solid var(--border-color) !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+.secondary-btn:hover, button.secondary:hover {
+    background-color: #fcfcfc !important;
+    border-color: var(--primary-theme-color) !important;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-md) !important;
+}
+
+/* --- Split View Explorer --- */
+#explorer_content_split {
+    display: flex;
+    gap: 30px;
+    align-items: flex-start;
+}
+
+#explorer_list_col {
+    height: calc(100vh - 150px);
+    overflow-y: auto;
+    padding-right: 15px; /* Space for scrollbar */
+    padding-bottom: 50px;
+}
+
+/* Minimal Scrollbar */
+#explorer_list_col::-webkit-scrollbar {
+    width: 8px;
+}
+#explorer_list_col::-webkit-scrollbar-track {
+    background: transparent;
+}
+#explorer_list_col::-webkit-scrollbar-thumb {
+    background-color: #dce3eb;
+    border-radius: 20px;
+}
+#explorer_list_col::-webkit-scrollbar-thumb:hover {
+    background-color: #cfd7e0;
+}
+
+#explorer_map_col {
+    position: sticky;
+    top: 20px;
+    height: auto;
+    min-height: 600px;
+}
+
+#map_output_html_dynamic {
+    border-radius: var(--radius-xl);
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid white; /* Subtle highlight */
+    height: 100% !important;
+}
+#map_output_html_dynamic iframe {
+    width: 100% !important;
+    height: 650px !important;
 }
 
 /* --- Site Cards --- */
 #sites_cards_area_dynamic {
-    /* Use flex column since we are inside a narrow column now */
     display: flex;
     flex-direction: column;
     gap: 20px;
-    padding-bottom: 20px;
 }
 
-/* Card Styling */
 .site-card {
     background-color: var(--card-background-color) !important;
-    border: 1px solid var(--border-color) !important;
+    border: 1px solid transparent !important; /* Cleaner look */
     border-radius: var(--radius-lg) !important;
-    overflow: hidden !important;
-    box-shadow: var(--shadow-sm) !important;
-    transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1) !important;
-    margin-bottom: 0 !important; /* Managed by flex gap */
+    box-shadow: var(--shadow-md) !important;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+    animation: fadeInUp 0.5s ease backwards;
 }
 
 .site-card:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--shadow-md) !important;
-    border-color: #cbd5e1 !important;
-}
-
-.site-card .gr-image, .site-card .gr-html {
-    margin: 0 !important;
-    padding: 0 !important;
-    border: none !important;
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-xl) !important;
 }
 
 .card-content {
@@ -223,126 +248,95 @@ body, .gradio-container {
 }
 
 .card-title .gr-markdown h3 {
-    font-family: var(--heading-font);
-    color: var(--primary-text-color);
-    margin: 0 0 10px 0;
-    font-size: 1.1em;
+    margin-top: 0;
+    font-size: 1.2rem;
     font-weight: 700;
-}
-
-.site-card .gr-textbox {
-    padding: 0 !important;
-    margin-bottom: 15px;
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-}
-.site-card .gr-textbox label { display: none; }
-.site-card .gr-textbox input, .site-card .gr-textbox textarea {
-    color: var(--secondary-text-color);
-    font-size: 0.9em;
-    padding: 0 !important;
-    border: none !important;
-    background: transparent !important;
-    box-shadow: none !important;
+    color: var(--primary-text-color);
 }
 
 .view-details-btn button {
-    width: 100% !important;
-    background-color: white !important;
+    margin-top: 10px;
+    width: 100%;
+    background-color: transparent !important;
     color: var(--primary-theme-color) !important;
     border: 1px solid var(--border-color) !important;
-    box-shadow: none !important;
-}
-.view-details-btn button:hover {
-    background-color: #f6f9fc !important;
-    border-color: var(--primary-theme-color) !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-
-/* --- Map --- */
-#map_output_html_dynamic {
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--border-color);
-    height: 100% !important; /* Fill the sticky container */
-    min-height: 600px;
-}
-#map_output_html_dynamic iframe {
-    height: 600px !important;
-    width: 100% !important;
-}
-
-/* --- Mission Planner Styling --- */
-.gr-accordion {
-    background-color: white;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-    margin-bottom: 20px;
-}
-.gr-accordion .label-wrap {
-    padding: 15px;
     font-weight: 600;
 }
-
-#mp_briefing_output {
-    background-color: white;
-    padding: 30px;
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-sm);
-    margin-top: 30px;
-    border: 1px solid var(--border-color);
+.view-details-btn button:hover {
+    background-color: var(--primary-theme-color) !important;
+    color: white !important;
+    border-color: var(--primary-theme-color) !important;
 }
 
-/* --- Mobile Optimizations --- */
+/* --- Dashboard Panels (Mission Planner & War Room) --- */
+.dashboard-panel {
+    background-color: white;
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-md);
+    padding: 30px !important;
+    border: 1px solid var(--border-color);
+    margin-bottom: 30px;
+}
+
+.strategy-card {
+    background-color: #f9fafb;
+    border-radius: var(--radius-lg);
+    padding: 20px !important;
+    border: 1px solid var(--border-color);
+    text-align: center;
+    transition: transform 0.2s ease;
+}
+.strategy-card:hover {
+    transform: translateY(-2px);
+    background-color: white;
+    box-shadow: var(--shadow-md);
+}
+
+/* --- Mobile Optimizations (Ultrathink) --- */
 @media (max-width: 768px) {
+    .gradio-container > .flex.w-full {
+        padding: 0 10px;
+    }
+
+    /* Header */
+    #header_area {
+        margin-top: 20px;
+        margin-bottom: 20px;
+    }
     #main_title_md_dynamic .gr-markdown h1 {
-        font-size: 1.8em;
+        font-size: 1.8rem;
     }
 
-    /* Stack the split view */
+    /* Split View Stack */
     #explorer_content_split {
-        flex-direction: column-reverse; /* Map on Top? No, let's do List then Map or Map then List */
-        /* If code is List (Left), Map (Right) */
-        /* Standard Stack: List (Top), Map (Bottom) */
-        /* User often wants Map first on Mobile for "where am I" context, but list is important for search results. */
-        /* Let's try Map on Top, List below. */
-        flex-direction: column-reverse;
-    }
-
-    #explorer_list_col {
-        height: auto; /* Allow full height scrolling */
-        overflow-y: visible;
-        width: 100% !important;
-        padding-right: 0;
+        flex-direction: column-reverse; /* Map on Top logic per thought process, wait - logic was Map Top or List Top? */
+        /* Let's do Map first so they see where they are, then scroll for details. */
+        gap: 20px;
     }
 
     #explorer_map_col {
-        width: 100% !important;
-        position: static; /* No sticky on mobile usually */
-        min-height: 300px;
-        margin-bottom: 20px;
-    }
-
-    #map_output_html_dynamic {
-        min-height: 300px;
+        position: static;
+        width: 100%;
+        min-height: 350px;
     }
     #map_output_html_dynamic iframe {
-        height: 300px !important;
+        height: 350px !important;
     }
 
-    .gr-row {
-        flex-direction: column;
+    #explorer_list_col {
+        height: auto;
+        overflow: visible;
+        width: 100%;
+        padding-right: 0;
     }
 
-    .gr-column {
-        width: 100% !important;
-        min-width: 100% !important;
-        margin-bottom: 20px;
+    /* Touch Targets */
+    .gr-button {
+        min-height: 48px; /* Easier to tap */
     }
 
-    .gradio-container {
-        padding: 10px;
+    .dashboard-panel {
+        padding: 15px !important;
+        border-radius: var(--radius-lg);
     }
 }
