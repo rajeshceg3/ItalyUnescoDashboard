@@ -94,6 +94,44 @@ def generate_map_html(df_map_data, route_data=None):
 
     site_map = folium.Map(location=map_center, zoom_start=5, tiles='CartoDB positron')
 
+    # Inject CSS for Popups (since Folium uses an IFrame)
+    popup_css = """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap');
+    .map-popup {
+        font-family: 'Open Sans', sans-serif;
+        width: 260px;
+        text-align: left;
+    }
+    .map-popup h4 {
+        margin: 0 0 8px 0;
+        color: #635bff;
+        font-size: 16px;
+        border-bottom: 1px solid #e6ebf1;
+        padding-bottom: 4px;
+        font-family: 'Montserrat', sans-serif;
+        font-weight: 700;
+    }
+    .map-popup img {
+        width: 100%;
+        height: 120px;
+        object-fit: cover;
+        border-radius: 4px;
+        margin-bottom: 8px;
+    }
+    .map-popup p {
+        margin: 4px 0;
+        font-size: 13px;
+        color: #425466;
+    }
+    .map-popup b {
+        color: #0a2540;
+        font-weight: 600;
+    }
+    </style>
+    """
+    site_map.get_root().header.add_child(folium.Element(popup_css))
+
     # Draw Route if available
     if route_data:
         points = []
@@ -135,19 +173,19 @@ def generate_map_html(df_map_data, route_data=None):
                 location_text = row.get('Location', 'N/A')
                 year_listed = row.get('Year Listed', 'N/A')
 
-                popup_html = f"<b>{site_name}</b><br>"
+                # Styled Popup
+                popup_html = f"<div class='map-popup'>"
+                popup_html += f"<h4>{site_name}</h4>"
+
                 if image_url != '#' and image_url != 'N/A' and pd.notna(image_url):
-                    popup_html += f"<a href='{image_url}' target='_blank'>View Image</a><br>"
-                else:
-                    popup_html += "No image available<br>"
+                    popup_html += f"<img src='{image_url}' alt='{site_name}'>"
 
                 if location_text != 'N/A' and pd.notna(location_text):
-                    popup_html += f"<b>Location:</b> {location_text}<br>"
+                    popup_html += f"<p><b>Location:</b> {location_text}</p>"
                 if year_listed != 'N/A' and pd.notna(year_listed):
-                    popup_html += f"<b>Year Listed:</b> {year_listed}"
+                    popup_html += f"<p><b>Year Listed:</b> {year_listed}</p>"
 
-                if popup_html.endswith("<br>"):
-                     popup_html = popup_html[:-4]
+                popup_html += "</div>"
 
                 folium.Marker(
                     location=[lat, lon],
@@ -183,6 +221,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
     # --- Fonts & Global Styles ---
     gr.HTML("""
         <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     """)
 
     # --- State Variables ---
@@ -194,7 +233,15 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
 
     # --- Header ---
     with gr.Group(elem_id="header_area"):
-        main_title_md = gr.Markdown("# Italy UNESCO World Heritage Sites Dashboard", elem_id="main_title_md_dynamic")
+        main_title_md = gr.Markdown(
+            """
+            # <i class="fa-solid fa-landmark"></i> Italy UNESCO World Heritage Sites
+            <div style="margin-top: 10px; font-size: 1.1rem; color: var(--text-secondary);">
+                Explore. Plan. Execute.
+            </div>
+            """,
+            elem_id="main_title_md_dynamic"
+        )
 
     # --- Define Detail View Handler (defined early so it can be called) ---
     def show_site_details(site_name_to_display, current_all_sites_df):
@@ -355,7 +402,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                         mp_download_file = gr.File(label="Download Orders")
 
                     with gr.Column(scale=2):
-                        mp_map_output = gr.HTML(label="Tactical Map")
+                        mp_map_output = gr.HTML(label="Tactical Map", elem_id="mp_map_output")
 
                 with gr.Row():
                      mp_sim_slider = gr.Slider(minimum=0, maximum=100, value=0, label="Mission Simulation Progress (%)", interactive=True)
@@ -545,6 +592,19 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
             map_center = [DEFAULT_LATITUDE, DEFAULT_LONGITUDE]
 
         site_map = folium.Map(location=map_center, zoom_start=6, tiles='CartoDB positron')
+
+        # Inject CSS
+        popup_css = """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap');
+        .map-popup { font-family: 'Open Sans', sans-serif; width: 260px; text-align: left; }
+        .map-popup h4 { margin: 0 0 8px 0; color: #635bff; font-size: 16px; border-bottom: 1px solid #e6ebf1; padding-bottom: 4px; font-family: 'Montserrat', sans-serif; font-weight: 700; }
+        .map-popup img { width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px; }
+        .map-popup p { margin: 4px 0; font-size: 13px; color: #425466; }
+        .map-popup b { color: #0a2540; font-weight: 600; }
+        </style>
+        """
+        site_map.get_root().header.add_child(folium.Element(popup_css))
 
         # Draw Threats
         if threats:
@@ -838,7 +898,10 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         if new_df.empty:
             updated_map_html = "<p style='text-align:center; color:grey;'>Map data not available: Data for selected country not found.</p>"
             empty_df_for_state = pd.DataFrame(columns=EXPECTED_COLUMNS)
-            updated_title = f"# {selected_country} UNESCO World Heritage Sites Dashboard - Data not found"
+            updated_title = f"""# <i class="fa-solid fa-landmark"></i> {selected_country} UNESCO World Heritage Sites
+            <div style="margin-top: 10px; font-size: 1.1rem; color: var(--text-secondary);">
+                Data Not Found
+            </div>"""
             return [
                 empty_df_for_state,
                 empty_df_for_state.copy(),
@@ -850,7 +913,10 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
             ]
         else:
             updated_map_html = generate_map_html(new_df)
-            updated_title = f"# {selected_country} UNESCO World Heritage Sites Dashboard"
+            updated_title = f"""# <i class="fa-solid fa-landmark"></i> {selected_country} UNESCO World Heritage Sites
+            <div style="margin-top: 10px; font-size: 1.1rem; color: var(--text-secondary);">
+                Explore. Plan. Execute.
+            </div>"""
             return [
                 new_df,
                 new_df.copy(),
