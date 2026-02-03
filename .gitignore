@@ -15,7 +15,6 @@ environment.yml
 environment.yaml
 Pipfile
 Pipfile.lock
-requirements.txt
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints

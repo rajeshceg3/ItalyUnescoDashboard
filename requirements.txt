@@ -1,0 +1,9 @@
+beautifulsoup4
+flask
+folium
+gradio
+lxml
+numpy
+pandas
+requests
+scipy
