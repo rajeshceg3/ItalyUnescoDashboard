@@ -25,13 +25,13 @@
 
     /* Typography */
     --font-heading: 'Montserrat', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-body: 'Open Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 
     /* Spacing */
     --radius-sm: 4px;
     --radius-md: 8px;
-    --radius-lg: 16px;
-    --radius-xl: 24px;
+    --radius-lg: 12px;
+    --radius-xl: 20px;
 }
 
 body, .gradio-container {
@@ -57,16 +57,16 @@ h1, h2, h3, h4, h5, h6 {
     color: var(--text-secondary);
 }
 
-/* --- Component Overrides --- */
-
-/* Block Container Reset */
+/* Global Reset for Gradio Blocks */
 .block {
     border: none !important;
     background: transparent !important;
 }
 
+/* --- Component Styles --- */
+
 /* Inputs (Textbox, Number, Dropdown) */
-input.scroll-hide, textarea.scroll-hide, .gr-box, .dropdown-wrapper {
+input.scroll-hide, textarea.scroll-hide, .gr-box, .dropdown-wrapper, .gr-input {
     background-color: var(--bg-input) !important;
     border: 1px solid var(--border-light) !important;
     border-radius: var(--radius-md) !important;
@@ -80,15 +80,16 @@ label.block {
     background: transparent !important;
 }
 label.block span {
+    font-family: var(--font-body) !important;
     font-weight: 600 !important;
     color: var(--text-secondary) !important;
     font-size: 0.75rem !important;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 8px !important;
+    margin-bottom: 6px !important;
 }
 
-input:focus, textarea:focus, select:focus {
+input:focus, textarea:focus, select:focus, .gr-input:focus-within {
     border-color: var(--border-focus) !important;
     box-shadow: 0 0 0 3px rgba(99, 91, 255, 0.15) !important;
     outline: none !important;
@@ -100,6 +101,7 @@ button {
     font-weight: 600 !important;
     border-radius: var(--radius-md) !important;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    cursor: pointer !important;
 }
 
 .primary-btn, button.primary {
@@ -111,7 +113,7 @@ button {
 
 .primary-btn:hover, button.primary:hover {
     background: var(--primary-hover) !important;
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     box-shadow: 0 7px 14px rgba(50, 50, 93, 0.1), 0 3px 6px rgba(0, 0, 0, 0.08) !important;
 }
 
@@ -139,6 +141,64 @@ button {
     margin-bottom: 24px;
 }
 
+/* Site Cards */
+.site-card {
+    background-color: var(--bg-card) !important;
+    border: 1px solid var(--border-light) !important;
+    border-radius: var(--radius-lg) !important;
+    box-shadow: var(--shadow-sm) !important;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+}
+
+.site-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg) !important;
+    border-color: var(--border-focus) !important;
+}
+
+.card-content {
+    padding: 16px !important;
+    flex-grow: 1;
+}
+
+.site-card img {
+    height: 200px;
+    width: 100%;
+    object-fit: cover;
+    border-radius: 8px 8px 0 0;
+    display: block;
+}
+
+.card-title h3 {
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 1.1rem;
+}
+
+.view-details-btn {
+    width: 100%;
+    margin-top: auto;
+}
+
+/* Strategy Cards (Wargame) */
+.strategy-card {
+    background: white;
+    padding: 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-light);
+    text-align: center;
+    transition: border-color 0.2s;
+}
+.strategy-card:hover {
+    border-color: var(--primary-color);
+}
+
 /* --- Layout & Responsiveness --- */
 
 /* Header */
@@ -153,26 +213,26 @@ button {
     background: linear-gradient(135deg, var(--primary-color), var(--accent-color));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
 }
 
 /* Explorer Split View */
 #explorer_content_split {
     display: flex;
     flex-direction: row;
-    gap: 32px;
+    gap: 24px;
     align-items: flex-start;
 }
 
 #explorer_list_col {
     flex: 1;
-    height: calc(100vh - 200px); /* Fixed height for scrolling */
+    height: calc(100vh - 220px); /* Fixed height for scrolling */
     overflow-y: auto;
-    padding-right: 12px;
+    padding-right: 8px;
     padding-bottom: 40px;
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar for list */
 #explorer_list_col::-webkit-scrollbar {
     width: 6px;
 }
@@ -188,7 +248,7 @@ button {
     flex: 2;
     position: sticky;
     top: 24px;
-    height: calc(100vh - 200px);
+    height: calc(100vh - 220px);
 }
 
 #map_output_html_dynamic {
@@ -204,10 +264,24 @@ button {
     width: 100% !important;
 }
 
+/* Mission Planner Map */
+#mp_map_output {
+    width: 100%;
+    min-height: 500px;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-light);
+}
+#mp_map_output iframe {
+    width: 100% !important;
+    height: 100% !important;
+}
+
 /* Mobile Responsiveness */
 @media (max-width: 900px) {
     #explorer_content_split {
-        flex-direction: column-reverse;
+        flex-direction: column-reverse; /* Map on top (2), List on bottom (1) */
         gap: 24px;
     }
 
@@ -227,7 +301,7 @@ button {
     }
 
     #header_area {
-        padding: 20px 0;
+        padding: 24px 0;
     }
 
     #main_title_md_dynamic h1 {
@@ -237,91 +311,4 @@ button {
     .dashboard-panel {
         padding: 16px;
     }
-}
-
-/* --- Cards & Map Popups --- */
-
-/* Site Cards in List */
-.site-card {
-    background-color: var(--bg-card) !important;
-    border: 1px solid var(--border-light) !important;
-    border-radius: var(--radius-lg) !important;
-    box-shadow: var(--shadow-sm) !important;
-    overflow: hidden;
-    transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
-    margin-bottom: 24px;
-}
-
-.site-card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-lg) !important;
-    border-color: var(--border-focus) !important;
-}
-
-.site-card img {
-    width: 100%;
-    height: 200px;
-    object-fit: cover;
-    border-bottom: 1px solid var(--border-light);
-}
-
-.card-content {
-    padding: 20px !important;
-}
-
-.card-title h3 {
-    margin-top: 0;
-    font-size: 1.1rem;
-    font-weight: 700;
-    margin-bottom: 8px;
-    color: var(--text-primary);
-}
-
-.view-details-btn {
-    margin-top: 16px;
-    width: 100%;
-}
-
-/* Folium Map Popups (injected via HTML) */
-.map-popup {
-    font-family: var(--font-body);
-    width: 260px;
-    text-align: left;
-}
-.map-popup h4 {
-    margin: 0 0 8px 0;
-    color: var(--primary-color);
-    font-size: 16px;
-    border-bottom: 1px solid var(--border-light);
-    padding-bottom: 4px;
-}
-.map-popup img {
-    width: 100%;
-    height: 120px;
-    object-fit: cover;
-    border-radius: var(--radius-sm);
-    margin-bottom: 8px;
-}
-.map-popup p {
-    margin: 4px 0;
-    font-size: 13px;
-    color: var(--text-secondary);
-}
-.map-popup b {
-    color: var(--text-primary);
-    font-weight: 600;
-}
-
-/* Mission Planner Map */
-#mp_map_output {
-    width: 100%;
-    min-height: 500px;
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    box-shadow: var(--shadow-md);
-    border: 1px solid var(--border-light);
-}
-#mp_map_output iframe {
-    width: 100% !important;
-    height: 100% !important;
 }

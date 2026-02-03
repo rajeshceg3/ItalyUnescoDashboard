@@ -17,6 +17,7 @@ jobs:
       with:
         python-version: "3.9"
         cache: 'pip' # Caching pip dependencies for speed
+        cache-dependency-path: requirements.txt
 
     - name: Install dependencies
       run: |
