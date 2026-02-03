@@ -98,31 +98,36 @@ def generate_map_html(df_map_data, route_data=None):
     popup_css = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap');
+    body { margin: 0; padding: 0; }
     .map-popup {
-        font-family: 'Open Sans', sans-serif;
+        font-family: 'Open Sans', -apple-system, sans-serif;
         width: 260px;
         text-align: left;
+        color: #0a2540;
     }
     .map-popup h4 {
         margin: 0 0 8px 0;
         color: #635bff;
         font-size: 16px;
         border-bottom: 1px solid #e6ebf1;
-        padding-bottom: 4px;
+        padding-bottom: 6px;
         font-family: 'Montserrat', sans-serif;
         font-weight: 700;
+        letter-spacing: -0.02em;
     }
     .map-popup img {
         width: 100%;
-        height: 120px;
+        height: 140px;
         object-fit: cover;
-        border-radius: 4px;
-        margin-bottom: 8px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
     .map-popup p {
         margin: 4px 0;
         font-size: 13px;
         color: #425466;
+        line-height: 1.5;
     }
     .map-popup b {
         color: #0a2540;
@@ -390,13 +395,13 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
                         )
 
                         gr.Markdown("### Fleet Composition")
-                        with gr.Row():
-                             # Dynamic fleet composition
-                             # For simplicity, we create specific inputs for each asset type count
-                             fleet_uav_count = gr.Number(label="UAV (Drone)", value=1, precision=0, minimum=0)
-                             fleet_suv_count = gr.Number(label="SUV (Ground)", value=0, precision=0, minimum=0)
-                             fleet_helo_count = gr.Number(label="Helo (Air)", value=0, precision=0, minimum=0)
-                             fleet_sedan_count = gr.Number(label="Sedan (Covert)", value=0, precision=0, minimum=0)
+                        with gr.Group(elem_classes=["fleet-composition-group"]):
+                            with gr.Row():
+                                fleet_uav_count = gr.Number(label="UAV (Drone)", value=1, precision=0, minimum=0)
+                                fleet_suv_count = gr.Number(label="SUV (Ground)", value=0, precision=0, minimum=0)
+                            with gr.Row():
+                                fleet_helo_count = gr.Number(label="Helo (Air)", value=0, precision=0, minimum=0)
+                                fleet_sedan_count = gr.Number(label="Sedan (Covert)", value=0, precision=0, minimum=0)
 
                         mp_execute_btn = gr.Button("Execute Mission Plan", variant="primary", elem_classes=["primary-btn"])
                         mp_download_file = gr.File(label="Download Orders")
@@ -597,11 +602,41 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         popup_css = """
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap');
-        .map-popup { font-family: 'Open Sans', sans-serif; width: 260px; text-align: left; }
-        .map-popup h4 { margin: 0 0 8px 0; color: #635bff; font-size: 16px; border-bottom: 1px solid #e6ebf1; padding-bottom: 4px; font-family: 'Montserrat', sans-serif; font-weight: 700; }
-        .map-popup img { width: 100%; height: 120px; object-fit: cover; border-radius: 4px; margin-bottom: 8px; }
-        .map-popup p { margin: 4px 0; font-size: 13px; color: #425466; }
-        .map-popup b { color: #0a2540; font-weight: 600; }
+        body { margin: 0; padding: 0; }
+        .map-popup {
+            font-family: 'Open Sans', -apple-system, sans-serif;
+            width: 260px;
+            text-align: left;
+            color: #0a2540;
+        }
+        .map-popup h4 {
+            margin: 0 0 8px 0;
+            color: #635bff;
+            font-size: 16px;
+            border-bottom: 1px solid #e6ebf1;
+            padding-bottom: 6px;
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+        .map-popup img {
+            width: 100%;
+            height: 140px;
+            object-fit: cover;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .map-popup p {
+            margin: 4px 0;
+            font-size: 13px;
+            color: #425466;
+            line-height: 1.5;
+        }
+        .map-popup b {
+            color: #0a2540;
+            font-weight: 600;
+        }
         </style>
         """
         site_map.get_root().header.add_child(folium.Element(popup_css))
