@@ -17,6 +17,47 @@ DEFAULT_LATITUDE = 41.8719  # Default fallback Rome
 DEFAULT_LONGITUDE = 12.5674
 EXPECTED_COLUMNS = ['Site Name', 'Image URL', 'Location', 'Year Listed', 'UNESCO Data', 'Description', 'Latitude', 'Longitude']
 
+MAP_POPUP_CSS = """
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap');
+    body { margin: 0; padding: 0; }
+    .map-popup {
+        font-family: 'Open Sans', -apple-system, sans-serif;
+        width: 280px;
+        text-align: left;
+        color: #0a2540;
+    }
+    .map-popup h4 {
+        margin: 0 0 10px 0;
+        color: #635bff;
+        font-size: 16px;
+        border-bottom: 1px solid #e6ebf1;
+        padding-bottom: 8px;
+        font-family: 'Montserrat', sans-serif;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+    }
+    .map-popup img {
+        width: 100%;
+        height: 160px;
+        object-fit: cover;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .map-popup p {
+        margin: 6px 0;
+        font-size: 13px;
+        color: #425466;
+        line-height: 1.5;
+    }
+    .map-popup b {
+        color: #0a2540;
+        font-weight: 600;
+    }
+    </style>
+"""
+
 def load_data(country_name="Italy"):
     """Loads data from CSV for a given country and adds dummy coordinates if needed."""
     data_file_path = os.path.join("data", f"unesco_sites_{country_name.lower().replace(' ', '_')}.csv")
@@ -95,47 +136,7 @@ def generate_map_html(df_map_data, route_data=None):
     site_map = folium.Map(location=map_center, zoom_start=5, tiles='CartoDB positron')
 
     # Inject CSS for Popups (since Folium uses an IFrame)
-    popup_css = """
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap');
-    body { margin: 0; padding: 0; }
-    .map-popup {
-        font-family: 'Open Sans', -apple-system, sans-serif;
-        width: 260px;
-        text-align: left;
-        color: #0a2540;
-    }
-    .map-popup h4 {
-        margin: 0 0 8px 0;
-        color: #635bff;
-        font-size: 16px;
-        border-bottom: 1px solid #e6ebf1;
-        padding-bottom: 6px;
-        font-family: 'Montserrat', sans-serif;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-    }
-    .map-popup img {
-        width: 100%;
-        height: 140px;
-        object-fit: cover;
-        border-radius: 8px;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .map-popup p {
-        margin: 4px 0;
-        font-size: 13px;
-        color: #425466;
-        line-height: 1.5;
-    }
-    .map-popup b {
-        color: #0a2540;
-        font-weight: 600;
-    }
-    </style>
-    """
-    site_map.get_root().header.add_child(folium.Element(popup_css))
+    site_map.get_root().header.add_child(folium.Element(MAP_POPUP_CSS))
 
     # Draw Route if available
     if route_data:
@@ -599,47 +600,7 @@ with gr.Blocks(css="custom.css", title="Italian UNESCO World Heritage Sites") as
         site_map = folium.Map(location=map_center, zoom_start=6, tiles='CartoDB positron')
 
         # Inject CSS
-        popup_css = """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Open+Sans:wght@400;600&display=swap');
-        body { margin: 0; padding: 0; }
-        .map-popup {
-            font-family: 'Open Sans', -apple-system, sans-serif;
-            width: 260px;
-            text-align: left;
-            color: #0a2540;
-        }
-        .map-popup h4 {
-            margin: 0 0 8px 0;
-            color: #635bff;
-            font-size: 16px;
-            border-bottom: 1px solid #e6ebf1;
-            padding-bottom: 6px;
-            font-family: 'Montserrat', sans-serif;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-        }
-        .map-popup img {
-            width: 100%;
-            height: 140px;
-            object-fit: cover;
-            border-radius: 8px;
-            margin-bottom: 12px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .map-popup p {
-            margin: 4px 0;
-            font-size: 13px;
-            color: #425466;
-            line-height: 1.5;
-        }
-        .map-popup b {
-            color: #0a2540;
-            font-weight: 600;
-        }
-        </style>
-        """
-        site_map.get_root().header.add_child(folium.Element(popup_css))
+        site_map.get_root().header.add_child(folium.Element(MAP_POPUP_CSS))
 
         # Draw Threats
         if threats:
@@ -1075,4 +1036,4 @@ if __name__ == "__main__":
         print(f"INFO: Data file for France ('{france_data_file}') not found. You may need to run the scraper for France.")
 
     print("Launching Gradio app...")
-    app.launch()
+    app.launch(server_name="0.0.0.0")

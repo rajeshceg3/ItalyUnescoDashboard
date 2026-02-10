@@ -66,7 +66,7 @@ h1, h2, h3, h4, h5, h6 {
 /* --- Component Styles --- */
 
 /* Inputs (Textbox, Number, Dropdown) */
-input.scroll-hide, textarea.scroll-hide, .gr-box, .dropdown-wrapper, .gr-input {
+input, textarea, select, .gr-input {
     background-color: var(--bg-input) !important;
     border: 1px solid var(--border-light) !important;
     border-radius: var(--radius-md) !important;
@@ -75,10 +75,13 @@ input.scroll-hide, textarea.scroll-hide, .gr-box, .dropdown-wrapper, .gr-input {
     transition: all 0.2s ease;
 }
 
-/* Targeting Gradio's specific input wrappers */
-label.block {
-    background: transparent !important;
+/* Gradio Dropdown & Box Fixes */
+.gr-box, .dropdown-wrapper {
+    background-color: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
 }
+
 label.block span {
     font-family: var(--font-body) !important;
     font-weight: 600 !important;
@@ -102,6 +105,7 @@ button {
     border-radius: var(--radius-md) !important;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
     cursor: pointer !important;
+    padding: 10px 20px !important;
 }
 
 .primary-btn, button.primary {
@@ -197,6 +201,33 @@ button {
 }
 .strategy-card:hover {
     border-color: var(--primary-color);
+}
+
+/* Tabs */
+.tabs {
+    border-bottom: 1px solid var(--border-light);
+    margin-bottom: 20px;
+}
+.tab-nav {
+    border: none !important;
+}
+.tab-nav button {
+    border: none !important;
+    background: transparent !important;
+    color: var(--text-secondary) !important;
+    font-weight: 600 !important;
+    padding: 10px 16px !important;
+}
+.tab-nav button.selected {
+    color: var(--primary-color) !important;
+    border-bottom: 2px solid var(--primary-color) !important;
+}
+
+/* Accordion */
+.accordion {
+    border: 1px solid var(--border-light) !important;
+    border-radius: var(--radius-md) !important;
+    box-shadow: var(--shadow-sm) !important;
 }
 
 /* --- Layout & Responsiveness --- */
